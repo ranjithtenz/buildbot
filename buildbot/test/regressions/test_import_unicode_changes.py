@@ -38,7 +38,7 @@ class TestUnicodeChanges(unittest.TestCase):
         # Create changes.pck
         changes = [Change(who=u"Frosty the \N{SNOWMAN}".encode("utf8"),
             files=["foo"], comments=u"Frosty the \N{SNOWMAN}".encode("utf8"),
-            branch="b1", revision=12345)]
+            branch="b1", revision=12345, _skip_unicode_check=1)]
         cPickle.dump(Thing(changes=changes), open(os.path.join(self.basedir,
             "changes.pck"), "w"))
 
@@ -53,7 +53,7 @@ class TestUnicodeChanges(unittest.TestCase):
     def testNonUnicodeChange(self):
         # Create changes.pck
         changes = [Change(who="\xff\xff\x00", files=["foo"],
-            comments="\xff\xff\x00", branch="b1", revision=12345)]
+            comments="\xff\xff\x00", branch="b1", revision=12345, _skip_unicode_check=1)]
         cPickle.dump(Thing(changes=changes), open(os.path.join(self.basedir,
             "changes.pck"), "w"))
 
@@ -63,7 +63,7 @@ class TestUnicodeChanges(unittest.TestCase):
     def testAsciiChange(self):
         # Create changes.pck
         changes = [Change(who="Frosty the Snowman",
-            files=["foo"], comments="Frosty the Snowman", branch="b1", revision=12345)]
+            files=["foo"], comments="Frosty the Snowman", branch="b1", revision=12345, _skip_unicode_check=1)]
         cPickle.dump(Thing(changes=changes), open(os.path.join(self.basedir,
             "changes.pck"), "w"))
 
@@ -80,7 +80,7 @@ class TestUnicodeChanges(unittest.TestCase):
         cm = OldChangeMaster()
         cm.changes = [Change(who=u"Frosty the \N{SNOWMAN}".encode("utf16"),
             files=["foo"], comments=u"Frosty the \N{SNOWMAN}".encode("utf16"),
-            branch="b1", revision=12345)]
+            branch="b1", revision=12345, _skip_unicode_check=1)]
 
         # instead of running contrib/fix_changes_pickle_encoding.py, we just call
         # the changemanager's recode_changes directly - it's the function at the

@@ -153,7 +153,19 @@ def customTextMailMessage(attrs):
     text = list()
     text.append("STATUS: %s" % attrs['result'].title())
     text.append("")
-    text.extend([c.asText() for c in attrs['changes']])
+    def ch2txt(c):
+        data = ""
+        data += c.getFileContents()
+        if c.repository:
+            data += "On: %s\n" % c.repository
+        if c.project:
+            data += "For: %s\n" % c.project
+        data += "At: %s\n" % c.getTime()
+        data += "Changed By: %s\n" % c.who
+        data += "Comments: %s" % c.comments
+        data += "Properties: \n%s\n\n" % c.getProperties()
+        return data
+    text.extend([ch2txt(c) for c in attrs['changes']])
     text.append("")
     name, url, lines, status = attrs['logs'][-1]
     text.append("Last %d lines of '%s':" % (logLines, name))

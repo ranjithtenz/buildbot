@@ -732,7 +732,7 @@ class IStatusEvent(Interface):
         """Returns a list of strings which describe the event. These are
         intended to be displayed in a narrow column. If more space is
         available, the caller should join them together with spaces before
-        presenting them to the user."""
+        presenting them to the user.  The strings should be html-encoded."""
 
 
 LOG_CHANNEL_STDOUT = 0

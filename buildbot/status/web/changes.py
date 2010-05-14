@@ -44,7 +44,7 @@ class ChangeBox(components.Adapter):
         url = req.childLink("../changes/%d" % self.original.number)
         template = req.site.buildbot_service.templates.get_template("change_macros.html")
         text = template.module.box_contents(url=url,
-                                            who=self.original.getShortAuthor(),
+                                            who=self.original.who,
                                             title=self.original.comments)
         return Box([text], class_="Change")
 components.registerAdapter(ChangeBox, Change, IBox)

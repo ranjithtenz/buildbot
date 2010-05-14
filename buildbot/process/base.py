@@ -111,13 +111,6 @@ class Build:
         blamelist.sort()
         return blamelist
 
-    def changesText(self):
-        changetext = ""
-        for c in self.allChanges():
-            changetext += "-" * 60 + "\n\n" + c.asText() + "\n"
-        # consider sorting these by number
-        return changetext
-
     def setStepFactories(self, step_factories):
         """Set a list of 'step factories', which are tuples of (class,
         kwargs), where 'class' is generally a subclass of step.BuildStep .
