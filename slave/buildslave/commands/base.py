@@ -508,13 +508,15 @@ class SourceBaseCommand(Command):
             '--remove-empty-files',
             '--force',
             '--forward',
+            '-i', '.buildbot-diff',
         ]
         dir = os.path.join(self.builder.basedir, self.workdir)
         # Mark the directory so we don't try to update it later, or at least try
         # to revert first.
-        marker = open(os.path.join(dir, ".buildbot-patched"), "w")
-        marker.write("patched\n")
-        marker.close()
+        open(os.path.join(dir, ".buildbot-patched"), "w").write("patched\n")
+
+        # write the diff to a file, for reading later
+        open(os.path.join(dir, ".buildbot-diff"), "w").write(diff)
 
         # Update 'dir' with the 'root' option. Make sure it is a subdirectory
         # of dir.
@@ -526,7 +528,7 @@ class SourceBaseCommand(Command):
         # now apply the patch
         c = runprocess.RunProcess(self.builder, command, dir,
                          sendRC=False, timeout=self.timeout,
-                         maxTime=self.maxTime, initialStdin=diff, usePTY=False)
+                         maxTime=self.maxTime, usePTY=False)
         self.command = c
         d = c.start()
         d.addCallback(self._abandonOnFailure)
