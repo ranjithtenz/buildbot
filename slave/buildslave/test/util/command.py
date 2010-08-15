@@ -65,7 +65,8 @@ class CommandTestMixin:
             os.makedirs(workdir_abs)
 
         b = self.builder = slavebuilder.FakeSlaveBuilder(basedir=self.basedir)
-        self.cmd = cmdclass(b, 'fake-stepid', args)
+        self.ops = None
+        self.cmd = cmdclass(b, 'fake-stepid', args, use_ops=self.ops)
 
         return self.cmd
 

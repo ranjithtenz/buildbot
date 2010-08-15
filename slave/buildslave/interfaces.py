@@ -54,3 +54,86 @@ class ISlaveCommand(Interface):
         Child shell processes should be killed. Simple ShellCommand classes
         can just insert a header line indicating that the process will be
         killed, then os.kill() the child."""
+
+class ISlaveOperations(Interface):
+    """
+
+    An object which can perform various filesystem-related operations on the
+    slave.  Rather than access things directly, slave commands use an instance
+    of this class.
+
+    This has two benefits: first, it allows testing the commands in a simulated
+    environment; second, it means that commands are designed in such a way that
+    they need not exist on the system where the operations are actually carried
+    out.
+
+    """
+
+    def runprocess(workdir, environ=None,
+                 sendStdout=True, sendStderr=True, sendRC=True,
+                 timeout=None, maxTime=None, initialStdin=None,
+                 keepStdinOpen=False, keepStdout=False, keepStderr=False,
+                 logEnviron=True, logfiles={}, usePTY="slave-config"):
+        """
+
+        Run an external process.
+
+        @param workdir: directory in which to run the process
+
+        @param environ: environment dictionary, or None to use the existing environment
+
+        @param sendStdout: true to send stdout back to the buildmaster
+
+        @param sendStderr: true to send stderr back to the buildmaster
+
+        @param sendRC: true to send an 'rc' result to the buildmaster,
+        signalling the end of the command
+
+        @param timeout: timeout, in seconds, for data from the command, or None
+        for no timeout.  If the command is silent for this duration, it will be
+        aborted.  None for no timeout.
+
+        @param maxTime: timeout, in seconds, for the entire command.
+        Regardless of output, if the command runs for longer than this, it will
+        be aborted.  None for no timeout.
+
+        @param initialStdin: value to write to the process's stdin after
+        starting (a string).  None for no input.
+
+        @param keepStdinOpen: false to close stdin before the process starts,
+        so it will get an EOF if it attempts to read.  Default true.
+
+        @param keeptStdout: true to keep stdout - see the getStdout method
+
+        @param keepStderr: true to keep stderr - see the getStderr method
+
+        @param logEnviron: true to log the environment with 'header' messages;
+        default true
+
+        @param logfiles: dictionary mapping name to filename for additional
+        logfiles to watch
+
+        @param usePTY: whether or not to allocate a pty for this command; true
+        or false force the value, while 'slave-config' (the default) uses the
+        user's configured value from the SlaveBuilder.
+
+        @return: Deferred which will fire with the exit code when the command
+        completes.
+
+        """
+
+    def getStdout():
+        """
+
+        Get the stdout of the most recent runprocess invocation, if keepStdout
+        was true
+
+        """
+
+    def getStderr():
+        """
+
+        Get the stderr of the most recent runprocess invocation, if keepStderr
+        was true
+
+        """

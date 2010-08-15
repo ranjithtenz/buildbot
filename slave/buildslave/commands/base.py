@@ -9,7 +9,7 @@ from twisted.internet import reactor, defer, task
 from twisted.python import log, failure, runtime
 
 from buildslave.interfaces import ISlaveCommand
-from buildslave import runprocess
+from buildslave import runprocess, ops
 from buildslave.exceptions import AbandonChain
 from buildslave.commands import utils
 
@@ -62,9 +62,11 @@ class Command:
     this is checked at startup time.
 
     All Commands are constructed with the same signature:
-     c = CommandClass(builder, stepid, args)
-    where 'builder' is the parent SlaveBuilder object, and 'args' is a
-    dict that is interpreted per-command.
+       c = CommandClass(builder, stepid, args)
+    where 'builder' is the parent SlaveBuilder object, and 'args' is a dict
+    that is interpreted per-command.
+
+    Subclasses will find an ISlaveOperations provider at `self.ops`.
 
     The setup(args) method is available for setup, and is run from __init__.
 
@@ -109,10 +111,16 @@ class Command:
 
     _reactor = reactor
 
-    def __init__(self, builder, stepId, args):
+    def __init__(self, builder, stepId, args, use_ops=None):
         self.builder = builder
         self.stepId = stepId # just for logging
         self.args = args
+
+        # if we were given an ops object, use it
+        self.ops = use_ops
+        if not self.ops:
+            self.ops = ops.LocalSlaveOperations(builder, self)
+
         self.setup(args)
 
     def setup(self, args):
