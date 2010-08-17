@@ -128,10 +128,15 @@ class Scheduler(base.BaseScheduler, base.ClassifierMixin):
 
         if not important:
             return None
+
         all_changes = important + unimportant
-        most_recent = max([c.when for c in all_changes])
+
         if self.treeStableTimer is not None:
             now = time.time()
+            most_recent = max([c.when for c in all_changes])
+            if most_recent > now:
+                most_recent = now
+
             stable_at = most_recent + self.treeStableTimer
             if stable_at > now:
                 # Wake up one second late, to avoid waking up too early and
