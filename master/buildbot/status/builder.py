@@ -1039,18 +1039,27 @@ class BuildStepStatus(styles.Versioned):
                     loog_deferred = loog.compressLog()
                     if loog_deferred:
                         cld.append(loog_deferred)
-
-        for r in self.updates.keys():
-            if self.updates[r] is not None:
-                self.updates[r].cancel()
-                del self.updates[r]
-
-        watchers = self.finishedWatchers
-        self.finishedWatchers = []
-        for w in watchers:
-            w.callback(self)
         if cld:
-            return defer.DeferredList(cld)
+            d = defer.DeferredList(cld)
+        else:
+            d = defer.succeed(None)
+
+        def notif(_):
+            # cancel any outstanding updates
+            for r in self.updates.keys():
+                if self.updates[r] is not None:
+                    self.updates[r].cancel()
+                    del self.updates[r]
+
+            # and call the watchers
+            watchers = self.finishedWatchers
+            self.finishedWatchers = []
+            for w in watchers:
+                w.callback(self)
+            return _
+
+        d.addBoth(notif)
+        return d
 
     def checkLogfiles(self):
         # filter out logs that have been deleted
