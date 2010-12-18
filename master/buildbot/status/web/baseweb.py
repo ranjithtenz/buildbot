@@ -132,7 +132,7 @@ class WebStatus(service.MultiService):
                  order_console_by_time=False, changecommentlink=None,
                  revlink=None, projects=None, repositories=None,
                  authz=None, logRotateLength=None, maxRotatedFiles=None,
-                 change_hook_dialects = {}):
+                 change_hook_dialects = {}, logFilename='http.log'):
         """Run a web server that provides Buildbot status.
 
         @type  http_port: int or L{twisted.application.strports} string
@@ -224,14 +224,18 @@ class WebStatus(service.MultiService):
             see buildbot.status.web.base.dictlink for details
 
         @type logRotateLength: None or int
-        @param logRotateLength: file size at which the http.log is rotated/reset.
+        @param logRotateLength: file size at which the http log is rotated/reset.
             If not set, the value set in the buildbot.tac will be used, 
              falling back to the BuildMaster's default value (1 Mb).
         
         @type maxRotatedFiles: None or int
-        @param maxRotatedFiles: number of old http.log files to keep during log rotation.
+        @param maxRotatedFiles: number of old http log files to keep during log rotation.
             If not set, the value set in the buildbot.tac will be used, 
              falling back to the BuildMaster's default value (10 files).       
+
+        @type logFilename: string
+        @param logFilename: base filename to log to, within the basedir;
+            defaults to http.log
         
         @type  change_hook_dialects: None or dict
         @param change_hook_dialects: If empty, disables change_hook support, otherwise      
@@ -292,6 +296,7 @@ class WebStatus(service.MultiService):
         # store the log settings until we create the site object
         self.logRotateLength = logRotateLength
         self.maxRotatedFiles = maxRotatedFiles        
+        self.logFilename = logFilename
 
         # create the web site page structure
         self.childrenToBeAdded = {}
@@ -365,14 +370,14 @@ class WebStatus(service.MultiService):
                 def _openLogFile(self, path):
                     try:
                         from twisted.python.logfile import LogFile
-                        log.msg("Setting up http.log rotating %s files of %s bytes each" %
+                        log.msg("Setting up http log rotating %s files of %s bytes each" %
                                 (maxRotatedFiles, rotateLength))            
                         if hasattr(LogFile, "fromFullPath"): # not present in Twisted-2.5.0
                             return LogFile.fromFullPath(path, rotateLength=rotateLength, maxRotatedFiles=maxRotatedFiles)
                         else:
                             log.msg("WebStatus: rotated http logs are not supported on this version of Twisted")
                     except ImportError, e:
-                        log.msg("WebStatus: Unable to set up rotating http.log: %s" % e)
+                        log.msg("WebStatus: Unable to set up rotating http log: %s" % e)
 
                     # if all else fails, just call the parent method
                     return server.Site._openLogFile(self, path)
@@ -380,7 +385,7 @@ class WebStatus(service.MultiService):
             # this will be replaced once we've been attached to a parent (and
             # thus have a basedir and can reference BASEDIR)
             root = static.Data("placeholder", "text/plain")
-            httplog = os.path.abspath(os.path.join(self.master.basedir, "http.log"))
+            httplog = os.path.abspath(os.path.join(self.master.basedir, self.logFilename))
             self.site = RotateLogSite(root, logPath=httplog)
 
         # the following items are accessed by HtmlResource when it renders

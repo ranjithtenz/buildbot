@@ -561,6 +561,12 @@ An integer defining the file size at which log files are rotated.
 
 The maximum number of old log files to keep. 
 
+@subheading logFilename
+
+The base filename to use for http log files - defaults to @file{http.log}.  If
+you have multiple web statuses defined, set each to a different log file to
+avoid conflicts.
+
 @heading URL-decorating options
 
 These arguments adds an URL link to various places in the WebStatus,
