@@ -19,65 +19,73 @@ from twisted.trial import unittest
 from twisted.internet import defer
 from buildbot.util import lru
 
+# construct weakref-able objects for particular keys
+def short(k):
+    return set([k.upper() * 3])
+def long(k):
+    return set([k.upper() * 6])
+
 class LRUCache(unittest.TestCase):
 
     def setUp(self):
         self.lru = lru.AsyncLRUCache(3)
 
-    def regular_miss_fn(self, key):
-        return defer.succeed(key.upper() * 3)
+    def short_miss_fn(self, key):
+        return defer.succeed(short(key))
 
-    def longer_miss_fn(self, key):
-        return defer.succeed(key.upper() * 6)
+    def long_miss_fn(self, key):
+        return defer.succeed(long(key))
 
     def failure_miss_fn(self, key):
         return defer.succeed(None)
 
-    def check_result(self, r, exp, exp_hits=None, exp_misses=None):
+    def check_result(self, r, exp, exp_hits=None, exp_misses=None, exp_refhits=None):
         self.assertEqual(r, exp)
         if exp_hits is not None:
             self.assertEqual(self.lru.hits, exp_hits)
         if exp_misses is not None:
             self.assertEqual(self.lru.misses, exp_misses)
+        if exp_refhits is not None:
+            self.assertEqual(self.lru.refhits, exp_refhits)
 
     # tests
 
     def test_single_key(self):
         # just get an item
-        d = self.lru.get('a', self.regular_miss_fn)
-        d.addCallback(self.check_result, 'AAA', 0, 1)
+        d = self.lru.get('a', self.short_miss_fn)
+        d.addCallback(self.check_result, short('a'), 0, 1)
 
         # second time, it should be cached..
         d.addCallback(lambda _ :
-            self.lru.get('a', self.longer_miss_fn))
-        d.addCallback(self.check_result, 'AAA', 1, 1)
+            self.lru.get('a', self.long_miss_fn))
+        d.addCallback(self.check_result, short('a'), 1, 1)
         return d
 
     def test_simple_lru_expulsion(self):
         d = defer.succeed(None)
 
         d.addCallback(lambda _ :
-            self.lru.get('a', self.regular_miss_fn))
-        d.addCallback(self.check_result, 'AAA', 0, 1)
+            self.lru.get('a', self.short_miss_fn))
+        d.addCallback(self.check_result, short('a'), 0, 1)
         d.addCallback(lambda _ :
-            self.lru.get('b', self.regular_miss_fn))
-        d.addCallback(self.check_result, 'BBB', 0, 2)
+            self.lru.get('b', self.short_miss_fn))
+        d.addCallback(self.check_result, short('b'), 0, 2)
         d.addCallback(lambda _ :
-            self.lru.get('c', self.regular_miss_fn))
-        d.addCallback(self.check_result, 'CCC', 0, 3)
+            self.lru.get('c', self.short_miss_fn))
+        d.addCallback(self.check_result, short('c'), 0, 3)
         d.addCallback(lambda _ :
-            self.lru.get('d', self.regular_miss_fn))
-        d.addCallback(self.check_result, 'DDD', 0, 4)
+            self.lru.get('d', self.short_miss_fn))
+        d.addCallback(self.check_result, short('d'), 0, 4)
 
         # now try 'a' again - it should be a miss
         d.addCallback(lambda _ :
-            self.lru.get('a', self.longer_miss_fn))
-        d.addCallback(self.check_result, 'AAAAAA', 0, 5)
+            self.lru.get('a', self.long_miss_fn))
+        d.addCallback(self.check_result, long('a'), 0, 5)
 
         # ..and that expelled B, but C is still in the cache
         d.addCallback(lambda _ :
-            self.lru.get('c', self.longer_miss_fn))
-        d.addCallback(self.check_result, 'CCC', 1, 5)
+            self.lru.get('c', self.long_miss_fn))
+        d.addCallback(self.check_result, short('c'), 1, 5)
         return d
 
     @defer.deferredGenerator
@@ -87,58 +95,95 @@ class LRUCache(unittest.TestCase):
 
         for c in 'a' + 'x' * 27 + 'ab':
             wfd = defer.waitForDeferred(
-                    self.lru.get(c, self.regular_miss_fn))
+                    self.lru.get(c, self.short_miss_fn))
             yield wfd
             res = wfd.getResult()
-        self.check_result(res, 'BBB', 27, 3)
+        self.check_result(res, short('b'), 27, 3)
 
         # at this point, we should have 'x', 'a', and 'b' in the cache,
         # and a, lots of x's, and ab in the queue.  The next get operation
         # should evict 'x', not 'a'.
 
         wfd = defer.waitForDeferred(
-                self.lru.get('c', self.regular_miss_fn))
+                self.lru.get('c', self.short_miss_fn))
         yield wfd
         res = wfd.getResult()
-        self.check_result(res, 'CCC', 27, 4)
+        self.check_result(res, short('c'), 27, 4)
 
-        # expect a cached 'AAA'
+        # expect a cached short('a')
         wfd = defer.waitForDeferred(
-                self.lru.get('a', self.longer_miss_fn))
+                self.lru.get('a', self.long_miss_fn))
         yield wfd
         res = wfd.getResult()
-        self.check_result(res, 'AAA', 28, 4)
+        self.check_result(res, short('a'), 28, 4)
 
-        # expect a newly minted 'XXXXXX'
+        # expect a newly minted long('x')
         wfd = defer.waitForDeferred(
-                self.lru.get('x', self.longer_miss_fn))
+                self.lru.get('x', self.long_miss_fn))
         yield wfd
         res = wfd.getResult()
-        self.check_result(res, 'XXXXXX', 28, 5)
+        self.check_result(res, long('x'), 28, 5)
 
     @defer.deferredGenerator
     def test_all_misses(self):
         for i, c in enumerate(string.lowercase + string.uppercase):
             wfd = defer.waitForDeferred(
-                    self.lru.get(c, self.regular_miss_fn))
+                    self.lru.get(c, self.short_miss_fn))
             yield wfd
             res = wfd.getResult()
-            self.check_result(res, c.upper() * 3, 0, i+1)
+            self.check_result(res, short(c), 0, i+1)
 
     @defer.deferredGenerator
     def test_all_hits(self):
         wfd = defer.waitForDeferred(
-                self.lru.get('a', self.regular_miss_fn))
+                self.lru.get('a', self.short_miss_fn))
         yield wfd
         res = wfd.getResult()
-        self.check_result(res, 'AAA', 0, 1)
+        self.check_result(res, short('a'), 0, 1)
 
         for i in xrange(100):
             wfd = defer.waitForDeferred(
-                    self.lru.get('a', self.longer_miss_fn))
+                    self.lru.get('a', self.long_miss_fn))
             yield wfd
             res = wfd.getResult()
-            self.check_result(res, 'AAA', i+1, 1)
+            self.check_result(res, short('a'), i+1, 1)
+
+    @defer.deferredGenerator
+    def test_weakrefs(self):
+        wfd = defer.waitForDeferred(
+                self.lru.get('a', self.short_miss_fn))
+        yield wfd
+        res_a = wfd.getResult()
+        self.check_result(res_a, short('a'))
+        # note that res_a keeps a reference to this value
+
+        wfd = defer.waitForDeferred(
+                self.lru.get('b', self.short_miss_fn))
+        yield wfd
+        res_b = wfd.getResult()
+        self.check_result(res_b, short('b'))
+        del res_b # discard reference to b
+
+        # blow out the cache and the queue
+        for c in (string.lowercase[2:] * 5):
+            wfd = defer.waitForDeferred(
+                    self.lru.get(c, self.long_miss_fn))
+            yield wfd
+            wfd.getResult()
+
+        # and fetch a again, expecting the cached value
+        wfd = defer.waitForDeferred(
+                self.lru.get('a', self.long_miss_fn))
+        yield wfd
+        res = wfd.getResult()
+        self.check_result(res, short('a'), exp_refhits=1)
+
+        # but 'b' should give us a new value
+        wfd = defer.waitForDeferred(
+                self.lru.get('b', self.long_miss_fn))
+        yield wfd
+        res = wfd.getResult()
+        self.check_result(res, long('b'), exp_refhits=1)
 
     @defer.deferredGenerator
     def test_fuzz(self):
@@ -146,7 +191,7 @@ class LRUCache(unittest.TestCase):
         random.shuffle(chars)
         for i, c in enumerate(chars):
             wfd = defer.waitForDeferred(
-                    self.lru.get(c, self.regular_miss_fn))
+                    self.lru.get(c, self.short_miss_fn))
             yield wfd
             res = wfd.getResult()
-            self.check_result(res, c.upper() * 3)
+            self.check_result(res, short(c))

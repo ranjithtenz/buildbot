@@ -13,6 +13,7 @@
 #
 # Copyright Buildbot Team Members
 
+from weakref import WeakValueDictionary
 from itertools import ifilterfalse
 from twisted.internet import defer
 from collections import deque
@@ -21,23 +22,34 @@ from buildbot.util.bbcollections import defaultdict
 class AsyncLRUCache(object):
     """
 
-    A least-recently-used cache, with a fixed maximum size.
+    A least-recently-used cache, with a fixed maximum size.  This cache is
+    designed to control memory usage by minimizing duplication of objects,
+    while avoiding unnecessary re-fetching of the same rows from the database.
 
-    This cache is designed to memoize asynchronous functions, and uses minimal
-    locking to ensure that a value is only calculated once at any given time.
+    Asynchronous locking is used to ensure that in the common case of multiple
+    concurrent requests for the same key, only one fetch is performed.
+    (TODO)
+
+    All values are also stored in a weak valued dictionary, even after they
+    have expired from the cache.  This allows values that are used elsewhere in
+    Buildbot to "stick" in the cache in case they are needed by another
+    component.  Weak references cannot be used for some types, so these types
+    are not compatible with this class.  Note that dictionaries can be weakly
+    referenced if they are an instance of a subclass of C{dict}.
 
     This is based on Raymond Hettinger's implementation in
     U{http://code.activestate.com/recipes/498245-lru-and-lfu-cache-decorators/}
     licensed under the PSF license, which is GPL-compatiblie.
 
     @ivar hits: cache hits so far
-    @ivar misses: cache misses so far
+    @ivar refhits: cache misses found in the weak ref dictionary, so far
+    @ivar misses: cache misses leading to re-fetches, so far
     """
 
     # TODO: per-item locking (list of deferreds to call with result or errback)
-    # TODO: backup WeakValueDictionary
 
-    __slots__ = 'max_size max_queue queue cache refcount hits misses'.split()
+    __slots__ = ('max_size max_queue queue cache weakrefs refcount ' 
+                 'hits refhits misses'.split())
     sentinel = object()
 
     def __init__(self, max_size=50):
@@ -45,7 +57,8 @@ class AsyncLRUCache(object):
         self.max_queue = max_size * 10
         self.queue = deque()
         self.cache = {}
-        self.hits = self.misses = 0
+        self.weakrefs = WeakValueDictionary()
+        self.hits = self.misses = self.refhits = 0
         self.refcount = defaultdict(default_factory = lambda : 0)
 
     @defer.deferredGenerator
@@ -59,6 +72,7 @@ class AsyncLRUCache(object):
         @returns: value via Deferred
         """
         cache = self.cache
+        weakrefs = self.weakrefs
         refcount = self.refcount
         queue = self.queue
 
@@ -70,13 +84,20 @@ class AsyncLRUCache(object):
             result = cache[key]
             self.hits += 1
         except KeyError:
-            wfd = defer.waitForDeferred(
-                    miss_fn(key))
-            yield wfd
-            result = wfd.getResult()
+            try:
+                # see if it's still in memory somewhere..
+                result = weakrefs[key]
+                self.refhits += 1
+            except KeyError:
+                wfd = defer.waitForDeferred(
+                        miss_fn(key))
+                yield wfd
+                result = wfd.getResult()
+                self.misses += 1
+
+                weakrefs[key] = result
 
             cache[key] = result
-            self.misses += 1
 
             # purge least recently used entry, using refcount
             # to count repeatedly-used entries
