@@ -46,8 +46,6 @@ class AsyncLRUCache(object):
     @ivar misses: cache misses leading to re-fetches, so far
     """
 
-    # TODO: per-item locking (list of deferreds to call with result or errback)
-
     __slots__ = ('max_size max_queue queue cache weakrefs refcount ' 
                  'hits refhits misses'.split())
     sentinel = object()
@@ -61,7 +59,6 @@ class AsyncLRUCache(object):
         self.hits = self.misses = self.refhits = 0
         self.refcount = defaultdict(default_factory = lambda : 0)
 
-    @defer.deferredGenerator
     def get(self, key, miss_fn):
         """
         Fetch a value from the cache by key, invoking C{miss_fn(key)} if the
@@ -83,41 +80,47 @@ class AsyncLRUCache(object):
         try:
             result = cache[key]
             self.hits += 1
+            return defer.succeed(result)
         except KeyError:
             try:
-                # see if it's still in memory somewhere..
                 result = weakrefs[key]
                 self.refhits += 1
+                cache[key] = result
+                return defer.succeed(result)
             except KeyError:
-                wfd = defer.waitForDeferred(
-                        miss_fn(key))
-                yield wfd
-                result = wfd.getResult()
-                self.misses += 1
+                pass
 
-                weakrefs[key] = result
+        # if we're here, we've missed and need to fetch
+        self.misses += 1
 
+        # chain in the miss_fn invocation and keep the result
+        d = miss_fn(key)
+
+        def cleanup(result):
             cache[key] = result
+            weakrefs[key] = result
 
             # purge least recently used entry, using refcount
             # to count repeatedly-used entries
             if len(cache) > self.max_size:
                 refc = 1
                 while refc:
-                    key = queue.popleft()
-                    refc = refcount[key] = refcount[key] - 1
-                del cache[key], refcount[key]
+                    k = queue.popleft()
+                    refc = refcount[k] = refcount[k] - 1
+                del cache[k], refcount[k]
 
-        # periodically compact the queue by eliminating duplicate keys
-        # while preserving order of most recent access
-        if len(queue) > self.max_queue:
-            refcount.clear()
-            queue_appendleft = queue.appendleft
-            queue_appendleft(self.sentinel)
-            for key in ifilterfalse(refcount.__contains__,
-                                    iter(queue.pop, self.sentinel)):
-                queue_appendleft(key)
-                refcount[key] = 1
+            # periodically compact the queue by eliminating duplicate keys
+            # while preserving order of most recent access
+            if len(queue) > self.max_queue:
+                refcount.clear()
+                queue_appendleft = queue.appendleft
+                queue_appendleft(self.sentinel)
+                for k in ifilterfalse(refcount.__contains__,
+                                        iter(queue.pop, self.sentinel)):
+                    queue_appendleft(k)
+                    refcount[k] = 1
 
-        # return the result
-        yield result
+            return result
+        d.addCallback(cleanup)
+
+        return d
