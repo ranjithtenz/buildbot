@@ -184,7 +184,7 @@ class Mercurial(Source):
         return d
 
     def incremental(self, _):
-        self.action = None
+        clobber = None
         d = defer.succeed(_)
         d.addCallback(self._getCurrentBranch)
         def _compare(current_branch):
@@ -192,12 +192,16 @@ class Mercurial(Source):
                 msg = "Working dir is on in-repo branch '%s' and build needs '%s'." % (current_branch, self.branch)
                 if self.clobberOnBranchChange:
                     msg += ' Cloberring.'
-                    self.action = self.doClobber(None)
+                    clobber = True
                 else:
                     msg += ' Updating.'
-                    self.action = self.doVCUpdate(None)
+                    clobber = False
                 log.msg(msg)
 
         d.addCallback(_compare)
-        d.addCallback(self.action)
+        if clobber:
+            d.addCallback(self.doClobber)
+        else:
+            d.addCallback(self.doVCUpdate)
+        
         return d
