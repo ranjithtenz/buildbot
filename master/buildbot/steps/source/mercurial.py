@@ -80,22 +80,22 @@ class Mercurial(Source):
                              " baseurl")
 
     def startVC(self, branch, revision, patch):
-
+        
         slavever = self.slaveVersion('hg')
         if not slavever:
             raise BuildSlaveTooOldError("slave is too old, does not know "
                                         "about hg")
-
+        self.branch = branch
+        self.update_branch = branch or 'default'
         if branch:
             assert self.branchType == 'dirname' and not self.repourl
             # The restriction is we can't configure named branch here.
             # that's why 'not self.repourl'.
             self.repourl = self.computeRepositoryURL(self.baseurl) + (branch or '')
-            self.branch = branch
         else:
             assert self.branchType == 'inrepo' and not self.baseurl
             self.repourl = self.computeRepositoryURL(self.repourl)
-            
+        self.revision = revision
         assert self.mode in ['incremental', 'clobber', 'fresh', 'clean']
         self.stdio_log = self.addLog("stdio")
 
@@ -107,7 +107,6 @@ class Mercurial(Source):
             d = self.fresh()
         elif self.mode == 'clean':
             d = self.clean()
-
         d.addCallback(self.parseGotRevision)
         d.addCallback(self.finish)
         return d
@@ -132,33 +131,6 @@ class Mercurial(Source):
         d.addErrback(self.failed)
         return d
         
-    def _sourcedirIsUpdatable(self):
-        cmd = LoggedRemoteCommand('stat', {'file': self.workdir + '/.hg'})
-        cmd.useLog(self.stdio_log, False)
-        d = self.runCommand(cmd)
-        def _fail(tmp):
-            if cmd.rc != 0:
-                return False
-            return True
-        d.addCallback(_fail)
-        return d
-
-    def doVCUpdate(self, _):
-        d = self._sourcedirIsUpdatable()
-        def cmd(updatable):
-            if updatable:
-                command = ['pull', '--update' , self.repourl]
-            else:
-                command = ["clone", self.repourl, "."]
-
-            if self.branch:
-                command += ['--branch', self.branch]
-            return command
-
-        d.addCallback(cmd)
-        d.addCallback(self._dovccmd)
-        return d
-
     def doClobber(self):
         cmd = LoggedRemoteCommand('rmdir', {'dir': self.workdir})
         cmd.useLog(self.stdio_log, False)
@@ -178,6 +150,45 @@ class Mercurial(Source):
         d.addCallback(_setrev)
         return d
 
+    def incremental(self):
+        d = self._sourcedirIsUpdatable()
+        def _cmd(updatable):
+            if updatable:
+                command = ['pull', self.repourl]
+            else:
+                command = ['clone', self.repourl, '.']
+            return command
+
+        d.addCallback(_cmd)
+        d.addCallback(self._dovccmd)
+        d.addCallback(self._checkBranchChange)
+        def _action(res):
+            #fix me
+            msg = "Working dir is on in-repo branch '%s' and build needs '%s'." % \
+                (self.branch, self.branch)
+            log.msg(res)
+            if res:
+                msg += ' Cloberring.'
+                log.msg(msg)
+                return self.doClobber()
+            else:
+                msg += ' Updating.'
+                log.msg(msg)
+                return self._update(None)
+        d.addCallback(_action)
+        return d
+
+    def _sourcedirIsUpdatable(self):
+        cmd = LoggedRemoteCommand('stat', {'file': self.workdir + '/.hg'})
+        cmd.useLog(self.stdio_log, False)
+        d = self.runCommand(cmd)
+        def _fail(tmp):
+            if cmd.rc != 0:
+                return False
+            return True
+        d.addCallback(_fail)
+        return d
+
     def _getCurrentBranch(self):
         d = self._dovccmd(['identify', '--branch'])
         def _getbranch(_):
@@ -185,30 +196,28 @@ class Mercurial(Source):
             log.msg("Current branch is %s" % (branch, ))
             return branch
         d.addCallback(_getbranch)
+        # d.addErrback(self.failed)
         return d
 
-    def incremental(self):
-        clobber = False
+    def _update(self, _):
+        command = ['update', '--clean']
+        if self.revision:
+            command += ['--rev', self.revision]
+        else:
+            command += ['--rev', self.branch or 'default']
+        d = self._dovccmd(command)
+        return d
+
+    def _checkBranchChange(self, _):
         d = self._getCurrentBranch()
         def _compare(current_branch):
-            if current_branch != self.branch:
-                msg = "Working dir is on in-repo branch '%s' and build needs '%s'." % \
-                    (current_branch, self.branch)
+            if current_branch != self.update_branch:
                 if self.clobberOnBranchChange:
-                    msg += ' Cloberring.'
-                    clobber = True
+                    return True
                 else:
-                    msg += ' Updating.'
-                log.msg(msg)
-
+                    return False
+            return False
         d.addCallback(_compare)
-
-        # Fix me
-        if clobber:
-            d.addCallback(self.doClobber)
-        else:
-            d.addCallback(self.doVCUpdate)
-        
         return d
 
     def clean(self):
@@ -227,6 +236,10 @@ class Mercurial(Source):
         if res != 0:
             log.msg("'hg purge' failed. Clobbering.")
             # fallback to clobber
-            return self.doClobber(res)
+            return self.doClobber()
 
-        return  self._dovccmd(['pull', '--update', self.repourl])
+        def _pullUpdate():
+            d = self._dovccmd(['pull' , self.repourl])
+            d.addCallback(self._update)
+            return d
+        return _pullUpdate()
