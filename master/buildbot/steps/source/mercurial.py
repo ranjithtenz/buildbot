@@ -18,6 +18,7 @@ from twisted.internet import defer
 
 from buildbot.process.buildstep import LoggedRemoteCommand, RemoteShellCommand
 from buildbot.steps.source import Source
+from buildbot.status.results import FAILURE
 
 class Mercurial(Source):
     """ Class for Mercurial with all the smarts """
@@ -98,43 +99,40 @@ class Mercurial(Source):
         assert self.mode in ['incremental', 'clobber', 'fresh', 'clean']
         self.stdio_log = self.addLog("stdio")
 
-        d = defer.succeed(None)
         if self.mode == 'incremental':
-            d.addCallback(self.incremental)
+            d = self.incremental()
         elif self.mode == 'clobber':
-            d.addCallback(self.doClobber)
+            d = self.doClobber()
         elif self.mode == 'fresh':
-            d.addCallback(self.fresh)
+            d = self.fresh()
         elif self.mode == 'clean':
-            d.addCallback(self.clean)
+            d = self.clean()
 
-        d.addCallback(self._parseGotRevision)
+        d.addCallback(self.parseGotRevision)
+        d.addCallback(self.finish)
         return d
 
-    def _dovccmd(self, command, end=True):
-        self.cmd = cmd = RemoteShellCommand(self.workdir, ['hg', '--verbose'] + command)
-        self.cmd.useLog(self.stdio_log, False)
+    def _dovccmd(self, command):
+        cmd = RemoteShellCommand(self.workdir, ['hg', '--verbose'] + command)
+        cmd.useLog(self.stdio_log, False)
         log.msg("Mercurial command : %s" % ("hg ".join(command), ))
-        d = self.runCommand(self.cmd)
-        # remove this 'end' parameter.
-        # This 'end' was entirely bad idea.
-        if end:
-            d.addCallback(lambda dummy: log.msg("Closing log, sending result of the command %s (%s)" % (self.cmd, dummy)))
-            def _gotResults(results):
-                self.setStatus(self.cmd, results)
-                return results
-            d.addCallback(lambda _: self.createSummary(self.cmd.logs['stdio']))
-            d.addCallback(lambda _: self.evaluateCommand(self.cmd)) 
-            # Probably this is bad idea. Judging the result of whole step
-            # solely based on result of last command.
-            # Should fix this.
-            d.addCallback(_gotResults)
-            d.addCallbacks(self.finished, self.checkDisconnect)
+        d = self.runCommand(cmd)
+        d.addCallback(lambda _: self.evaluateCommand(cmd)) 
+        d.addErrback(self.failed)
+        return d
 
+    def finish(self, res):
+        d = defer.succeed(res)
+        def _gotResults(results):
+            self.setStatus(self.cmd, results)
+            log.msg("Closing log, sending result of the command %s " % (self.cmd))
+            return results
+        d.addCallback(_gotResults)
+        d.addCallbacks(self.finished, self.checkDisconnect)
         d.addErrback(self.failed)
         return d
         
-    def _sourcedirIsUpdatable(self, _):
+    def _sourcedirIsUpdatable(self):
         cmd = LoggedRemoteCommand('stat', {'file': self.workdir + '/.hg'})
         cmd.useLog(self.stdio_log, False)
         d = self.runCommand(cmd)
@@ -146,8 +144,7 @@ class Mercurial(Source):
         return d
 
     def doVCUpdate(self, _):
-        d = defer.succeed(_)
-        d.addCallback(self._sourcedirIsUpdatable)
+        d = self._sourcedirIsUpdatable()
         def cmd(updatable):
             if updatable:
                 command = ['pull', '--update' , self.repourl]
@@ -159,32 +156,30 @@ class Mercurial(Source):
             return command
 
         d.addCallback(cmd)
-        d.addCallback(self._dovccmd, False)
+        d.addCallback(self._dovccmd)
         return d
 
-    def doClobber(self, _):
-        self.cmd = LoggedRemoteCommand('rmdir', {'dir': self.workdir})
-        self.cmd.useLog(self.stdio_log, False)
-        d = self.runCommand(self.cmd)
-        d.addCallback(lambda _: self._dovccmd(["clone", self.repourl, "."], False))
+    def doClobber(self):
+        cmd = LoggedRemoteCommand('rmdir', {'dir': self.workdir})
+        cmd.useLog(self.stdio_log, False)
+        d = self.runCommand(cmd)
+        d.addCallback(lambda _: self._dovccmd(["clone", self.repourl, "."]))
         return d
 
-    def _parseGotRevision(self, _):
-        d = defer.succeed(None)
-        d.addCallback(lambda _: self._dovccmd(['identify', '--id', '--debug'], True))
-        def _setrev(_):
+    def parseGotRevision(self, _):
+        d = self._dovccmd(['identify', '--id', '--debug'])
+        def _setrev(res):
             revision = self.getLog('stdio').readlines()[-1].strip()
             if len(revision) != 40:
-                return None
+                return FAILURE
             log.msg("Got Mercurial revision %s" % (revision, ))
             self.setProperty('got_revision', revision, 'Source')
-            return revision
+            return res
         d.addCallback(_setrev)
         return d
 
-    def _getCurrentBranch(self, _):
-        d = defer.succeed(None)
-        d.addCallback(lambda _: self._dovccmd(['identify', '--branch'], False))
+    def _getCurrentBranch(self):
+        d = self._dovccmd(['identify', '--branch'])
         def _getbranch(_):
             branch = self.getLog('stdio').readlines()[-1].strip()
             log.msg("Current branch is %s" % (branch, ))
@@ -192,10 +187,9 @@ class Mercurial(Source):
         d.addCallback(_getbranch)
         return d
 
-    def incremental(self, _):
+    def incremental(self):
         clobber = False
-        d = defer.succeed(_)
-        d.addCallback(self._getCurrentBranch)
+        d = self._getCurrentBranch()
         def _compare(current_branch):
             if current_branch != self.branch:
                 msg = "Working dir is on in-repo branch '%s' and build needs '%s'." % \
@@ -217,19 +211,22 @@ class Mercurial(Source):
         
         return d
 
-    def clean(self, _):
+    def clean(self):
         command = ['--config', 'extensions.purge=', 'purge']
-        d = defer.succeed(0)
-        d.addCallback(lambda _: self._dovccmd(command, False))
-        # Check integrity of the repo
-        d.addCallback(lambda _: self._dovccmd(['pull', '--update', self.repourl], False))
+        d =  self._dovccmd(command)
+        d.addCallback(self._checkPurge)
         return d
 
-    def fresh(self, _):
+    def fresh(self):
         command = ['--config', 'extensions.purge=', 'purge', '--all']
-        d = defer.succeed(0)
-        d.addCallback(lambda _: self._dovccmd(command, False))
-        # Check integrity of the repo before and after pull/update
-        d.addCallback(lambda _: self._dovccmd(['pull', '--update', self.repourl], False))
+        d = self._dovccmd(command)
+        d.addCallback(self._checkPurge)
         return d
     
+    def _checkPurge(self, res):
+        if res != 0:
+            log.msg("'hg purge' failed. Clobbering.")
+            # fallback to clobber
+            return self.doClobber(res)
+
+        return  self._dovccmd(['pull', '--update', self.repourl])
