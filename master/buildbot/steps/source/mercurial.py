@@ -73,6 +73,7 @@ class Mercurial(Source):
         self.addFactoryArguments(repourl=repourl,
                                  baseurl=baseurl,
                                  mode=mode,
+                                 method=method,
                                  defaultBranch=defaultBranch,
                                  branchType=branchType,
                                  )
@@ -87,8 +88,7 @@ class Mercurial(Source):
         if not slavever:
             raise BuildSlaveTooOldError("slave is too old, does not know "
                                         "about hg")
-        self.branch = branch
-        self.update_branch = branch or 'default'
+        self.branch = branch or 'default'
         if branch:
             assert self.branchType == 'dirname' and not self.repourl
             # The restriction is we can't configure named branch here.
@@ -99,17 +99,13 @@ class Mercurial(Source):
             assert self.branchType == 'inrepo' and not self.baseurl
             self.repourl = self.computeRepositoryURL(self.repourl)
         self.revision = revision
-        assert self.mode in ['incremental', 'clobber', 'fresh', 'clean']
+        assert self.mode in ['incremental', 'full']
         self.stdio_log = self.addLog("stdio")
 
         if self.mode == 'incremental':
             d = self.incremental()
-        elif self.mode == 'clobber':
-            d = self.doClobber()
-        elif self.mode == 'fresh':
-            d = self.fresh()
-        elif self.mode == 'clean':
-            d = self.clean()
+        elif self.mode == 'full':
+            d = self.full()
         d.addCallback(self.parseGotRevision)
         d.addCallback(self.finish)
         return d
@@ -145,6 +141,14 @@ class Mercurial(Source):
         d.addCallback(self._checkPurge)
         return d
 
+    def full(self):
+        if self.method == 'clean':
+            return self.clean()
+        elif self.method == 'fresh':
+            return self.fresh()
+        elif self.method == 'clobber':
+            return self.doClobber()
+
     def incremental(self):
         d = self._sourcedirIsUpdatable()
         def _cmd(updatable):
@@ -159,8 +163,7 @@ class Mercurial(Source):
         d.addCallback(self._checkBranchChange)
         def _action(res):
             #fix me
-            msg = "Working dir is on in-repo branch '%s' and build needs" + \
-                " '%s'." % (self.update_branch, self.branch)
+            msg = "Working dir is on in-repo branch '%s' and build needs '%s'." % (self.branch, self.branch)
             log.msg(res)
             if res:
                 msg += ' Cloberring.'
@@ -188,7 +191,7 @@ class Mercurial(Source):
     def _checkBranchChange(self, _):
         d = self._getCurrentBranch()
         def _compare(current_branch):
-            if current_branch != self.update_branch:
+            if current_branch != self.branch:
                 if self.clobberOnBranchChange:
                     return True
                 else:
