@@ -106,6 +106,13 @@ class Build:
     def getProperty(self, propname):
         return self.build_status.getProperty(propname)
 
+    def render(self, value):
+        """
+        Return a variant of value that has any WithProperties objects
+        substituted.  This recurses into Python's compound data types.
+        """
+        return interfaces.IRenderable(value).getRenderingFor(self)
+
     def allChanges(self):
         return self.source.changes
 
@@ -125,6 +132,8 @@ class Build:
         for c in self.allChanges():
             if c.who not in blamelist:
                 blamelist.append(c.who)
+        if self.source.patch_info: #Add patch author to blamelist
+            blamelist.append(self.source.patch_info[0])
         blamelist.sort()
         return blamelist
 

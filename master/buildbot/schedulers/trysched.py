@@ -16,7 +16,7 @@
 import os
 
 from twisted.internet import defer
-from twisted.python import log, runtime
+from twisted.python import log
 from twisted.protocols import basic
 
 from buildbot import pbutil
@@ -62,24 +62,8 @@ class JobdirService(MaildirService):
     # NOTE: tightly coupled with Try_Jobdir, below
 
     def messageReceived(self, filename):
-        md = self.parent.jobdir
-        if runtime.platformType == "posix":
-            # open the file before moving it, because I'm afraid that once
-            # it's in cur/, someone might delete it at any moment
-            path = os.path.join(md, "new", filename)
-            f = open(path, "r")
-            os.rename(os.path.join(md, "new", filename),
-                      os.path.join(md, "cur", filename))
-        if runtime.platformType == "win32":
-            # do this backwards under windows, because you can't move a file
-            # that somebody is holding open. This was causing a Permission
-            # Denied error on bear's win32-twisted1.3 buildslave.
-            os.rename(os.path.join(md, "new", filename),
-                      os.path.join(md, "cur", filename))
-            path = os.path.join(md, "cur", filename)
-            f = open(path, "r")
-
-        self.parent.handleJobFile(filename, f)
+        f = self.moveToCurDir(filename)
+        return self.parent.handleJobFile(filename, f)
 
 
 class Try_Jobdir(TryBase):
@@ -128,6 +112,7 @@ class Try_Jobdir(TryBase):
             repository=''
             project=''
             who=''
+            comment=''
         elif ver == "2": # introduced the repository and project property
             buildsetID, branch, baserev, patchlevel, diff, repository, project = p.strings[:7]
             builderNames = p.strings[7:]
@@ -137,6 +122,7 @@ class Try_Jobdir(TryBase):
                 baserev = None
             patchlevel = int(patchlevel)
             who=''
+            comment=''
         elif ver == "3": # introduced who property
             buildsetID, branch, baserev, patchlevel, diff, repository, project, who = p.strings[:8]
             builderNames = p.strings[8:]
@@ -145,6 +131,16 @@ class Try_Jobdir(TryBase):
             if baserev == "":
                 baserev = None
             patchlevel = int(patchlevel)
+            comment=''
+        elif ver == "4": # introduced try comments
+            buildsetID, branch, baserev, patchlevel, diff, repository, project, who, comment = p.strings[:9]
+            builderNames = p.strings[9:]
+            if branch == "":
+                branch = None
+            if baserev == "":
+                baserev = None
+            patchlevel = int(patchlevel)
+            
         else:
             raise BadJobfile("unknown version '%s'" % ver)
         return dict(
@@ -156,6 +152,7 @@ class Try_Jobdir(TryBase):
                 repository=repository,
                 project=project,
                 who=who,
+                comment=comment,
                 jobid=buildsetID)
 
     def handleJobFile(self, filename, f):
@@ -172,12 +169,22 @@ class Try_Jobdir(TryBase):
         if not builderNames:
             log.msg("incoming Try job did not specify any allowed builder names")
             return defer.succeed(None)
+        
+        who = ""
+        if parsed_job['who']:
+            who = parsed_job['who']
+        
+        comment = ""
+        if parsed_job['comment']:
+            comment = parsed_job['comment']
 
         d = self.master.db.sourcestamps.addSourceStamp(
                 branch=parsed_job['branch'],
                 revision=parsed_job['baserev'],
                 patch_body=parsed_job['patch_body'],
                 patch_level=parsed_job['patch_level'],
+                patch_author=who,
+                patch_comment=comment,
                 patch_subdir='', # TODO: can't set this remotely - #1769
                 project=parsed_job['project'],
                 repository=parsed_job['repository'])
@@ -199,7 +206,7 @@ class Try_Userpass_Perspective(pbutil.NewCredPerspective):
 
     @defer.deferredGenerator
     def perspective_try(self, branch, revision, patch, repository, project,
-                        builderNames, who='', properties={} ):
+                        builderNames, who="", comment="", properties={} ):
         db = self.scheduler.master.db
         log.msg("user %s requesting build on builders %s" % (self.username,
                                                              builderNames))
@@ -209,17 +216,22 @@ class Try_Userpass_Perspective(pbutil.NewCredPerspective):
         if not builderNames:
             return
 
+        reason = "'try' job"
+        
+        if who:
+            reason += " by user %s" % who
+            
+        if comment:
+            reason += " (%s)" % comment
+
         wfd = defer.waitForDeferred(
                 db.sourcestamps.addSourceStamp(branch=branch, revision=revision,
                     repository=repository, project=project, patch_level=patch[0],
-                    patch_body=patch[1], patch_subdir=''))
+                    patch_body=patch[1], patch_subdir='', patch_author=who,
+                    patch_comment = comment))
                     # note: no way to specify patch subdir - #1769
         yield wfd
         ssid = wfd.getResult()
-
-        reason = "'try' job"
-        if who:
-            reason += " by user %s" % who
 
         requested_props = Properties()
         requested_props.update(properties, "try build")
