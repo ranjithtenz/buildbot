@@ -16,13 +16,15 @@
 from twisted.python import log
 from twisted.internet import defer
 
-from buildbot.process.buildstep import LoggedRemoteCommand, RemoteShellCommand
-from buildbot.steps.source import Source
+from buildbot.process import buildstep
+from buildbot.steps.source import Source, _ComputeRepositoryURL
 from buildbot.status.results import FAILURE
 
 class Mercurial(Source):
     """ Class for Mercurial with all the smarts """
     name = "hg"
+
+    renderables = [ "repourl", "baseurl" ]
 
     def __init__(self, repourl=None, baseurl=None, mode='incremental', 
                  method=None, defaultBranch=None, branchType='inrepo', 
@@ -81,6 +83,8 @@ class Mercurial(Source):
         if repourl and baseurl:
             raise ValueError("you must provide exactly one of repourl and"
                              " baseurl")
+        self.repourl = self.repourl and _ComputeRepositoryURL(self.repourl)
+        self.baseurl = self.baseurl and _ComputeRepositoryURL(self.baseurl)
 
     def startVC(self, branch, revision, patch):
         
@@ -93,11 +97,9 @@ class Mercurial(Source):
             assert self.branchType == 'dirname' and not self.repourl
             # The restriction is we can't configure named branch here.
             # that's why 'not self.repourl'.
-            self.repourl = self.computeRepositoryURL(self.baseurl) + \
-                (branch or '')
+            self.repourl = self.baseurl + (branch or '')
         else:
             assert self.branchType == 'inrepo' and not self.baseurl
-            self.repourl = self.computeRepositoryURL(self.repourl)
         self.revision = revision
         assert self.mode in ['incremental', 'full']
         self.stdio_log = self.addLog("stdio")
@@ -108,7 +110,7 @@ class Mercurial(Source):
             d = self.full()
         d.addCallback(self.parseGotRevision)
         d.addCallback(self.finish)
-        return d
+        d.addErrback(self.failed)
 
     def clean(self):
         command = ['--config', 'extensions.purge=', 'purge']
@@ -117,7 +119,7 @@ class Mercurial(Source):
         return d
 
     def doClobber(self):
-        cmd = LoggedRemoteCommand('rmdir', {'dir': self.workdir})
+        cmd = buildstep.LoggedRemoteCommand('rmdir', {'dir': self.workdir})
         cmd.useLog(self.stdio_log, False)
         d = self.runCommand(cmd)
         d.addCallback(lambda _: self._dovccmd(["clone", self.repourl, "."]))
@@ -213,7 +215,7 @@ class Mercurial(Source):
         return _pullUpdate()
 
     def _dovccmd(self, command):
-        cmd = RemoteShellCommand(self.workdir, ['hg', '--verbose'] + command)
+        cmd = buildstep.RemoteShellCommand(self.workdir, ['hg', '--verbose'] + command)
         cmd.useLog(self.stdio_log, False)
         log.msg("Mercurial command : %s" % ("hg ".join(command), ))
         d = self.runCommand(cmd)
@@ -232,7 +234,7 @@ class Mercurial(Source):
         return d
 
     def _sourcedirIsUpdatable(self):
-        cmd = LoggedRemoteCommand('stat', {'file': self.workdir + '/.hg'})
+        cmd = buildstep.LoggedRemoteCommand('stat', {'file': self.workdir + '/.hg'})
         cmd.useLog(self.stdio_log, False)
         d = self.runCommand(cmd)
         def _fail(tmp):
