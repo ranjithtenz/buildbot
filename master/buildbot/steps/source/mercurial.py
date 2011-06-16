@@ -19,6 +19,7 @@ from twisted.internet import defer
 from buildbot.process import buildstep
 from buildbot.steps.source import Source, _ComputeRepositoryURL
 from buildbot.status.results import FAILURE
+from buildslave.exceptions import AbandonChain
 
 class Mercurial(Source):
     """ Class for Mercurial with all the smarts """
@@ -70,6 +71,7 @@ class Mercurial(Source):
         self.branchType = branchType
         self.clobberOnBranchChange = clobberOnBranchChange
         self.method = method
+        self.clobbercount = 0
         Source.__init__(self, **kwargs)
         self.mode = mode
         self.addFactoryArguments(repourl=repourl,
@@ -118,11 +120,17 @@ class Mercurial(Source):
         d.addCallback(self._checkPurge)
         return d
 
-    def doClobber(self):
+    def clobber(self):
+        self.clobbercount += 1
+
+        if self.clobbercount > 3:
+            raise Exception, "Too many clobber attempts. Aborting step"
         cmd = buildstep.LoggedRemoteCommand('rmdir', {'dir': self.workdir})
         cmd.useLog(self.stdio_log, False)
         d = self.runCommand(cmd)
-        d.addCallback(lambda _: self._dovccmd(["clone", self.repourl, "."]))
+        d.addCallback(lambda _: self._dovccmd(['clone', '--noupdate'
+                                               , self.repourl, "."]))
+        d.addCallback(self._update)
         return d
 
     def finish(self, res):
@@ -149,7 +157,7 @@ class Mercurial(Source):
         elif self.method == 'fresh':
             return self.fresh()
         elif self.method == 'clobber':
-            return self.doClobber()
+            return self.clobber()
 
     def incremental(self):
         d = self._sourcedirIsUpdatable()
@@ -170,7 +178,7 @@ class Mercurial(Source):
             if res:
                 msg += ' Cloberring.'
                 log.msg(msg)
-                return self.doClobber()
+                return self.clobber()
             else:
                 msg += ' Updating.'
                 log.msg(msg)
@@ -206,7 +214,7 @@ class Mercurial(Source):
         if res != 0:
             log.msg("'hg purge' failed. Clobbering.")
             # fallback to clobber
-            return self.doClobber()
+            return self.clobber()
 
         def _pullUpdate():
             d = self._dovccmd(['pull' , self.repourl])
@@ -219,13 +227,15 @@ class Mercurial(Source):
         cmd.useLog(self.stdio_log, False)
         log.msg("Mercurial command : %s" % ("hg ".join(command), ))
         d = self.runCommand(cmd)
-        d.addCallback(lambda _: self.evaluateCommand(cmd)) 
+        d.addCallback(lambda _: self.evaluateCommand(cmd))
         d.addErrback(self.failed)
         return d
 
     def _getCurrentBranch(self):
         d = self._dovccmd(['identify', '--branch'])
-        def _getbranch(_):
+        def _getbranch(res):
+            if res != 0:
+                raise AbandonChain(-1)
             branch = self.getLog('stdio').readlines()[-1].strip()
             log.msg("Current branch is %s" % (branch, ))
             return branch
@@ -251,4 +261,9 @@ class Mercurial(Source):
         else:
             command += ['--rev', self.branch or 'default']
         d = self._dovccmd(command)
+        def _checkResult(res):
+            if res != 0:
+                log.msg("Update failed, fallback to clobber")
+                return self.clobber()
+        d.addCallback(_checkResult)
         return d

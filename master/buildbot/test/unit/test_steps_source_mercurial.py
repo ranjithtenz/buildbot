@@ -62,8 +62,12 @@ class TestMercurial(sourcesteps.SourceStepMixin, unittest.TestCase):
         self.expectCommands(
             Expect('rmdir', dict(dir='wkdir')),
             ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'clone',
+                        command=['hg', '--verbose', 'clone', '--noupdate',
                                     'http://hg.mozilla.org', '.'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'update',
+                                 '--clean', '--rev', 'default'])
             + 0,
             ExpectShell(workdir='wkdir',
                         command=['hg', '--verbose', 'identify',
