@@ -476,6 +476,7 @@ class MailNotifier(base.StatusReceiverMultiService):
                  'branch': "",
                  'revision': "",
                  'patch': "",
+                 'patch_info': "",
                  'changes': [],
                  'logs': logs}
 
@@ -484,6 +485,7 @@ class MailNotifier(base.StatusReceiverMultiService):
             attrs['branch'] = ss.branch
             attrs['revision'] = ss.revision
             attrs['patch'] = ss.patch
+            attrs['patch_info'] = ss.patch_info
             attrs['changes'] = ss.changes[:]
 
         return attrs
@@ -540,12 +542,9 @@ class MailNotifier(base.StatusReceiverMultiService):
         # Add any extra headers that were requested, doing WithProperties
         # interpolation if only one build was given
         if self.extraHeaders:
-            if len(builds) == 1:
-                properties = builds[0].getProperties()
-                
             for k,v in self.extraHeaders.items():
                 if len(builds == 1):
-                    k = properties.render(k)
+                    k = builds[0].render(k)
                 if k in m:
                     twlog.msg("Warning: Got header " + k +
                       " in self.extraHeaders "
@@ -553,7 +552,7 @@ class MailNotifier(base.StatusReceiverMultiService):
                       "not adding it.")
                 continue
                 if len(builds == 1):
-                    m[k] = properties.render(v)
+                    m[k] = builds[0].render(v)
                 else:
                     m[k] = v
     

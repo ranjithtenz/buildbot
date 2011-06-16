@@ -23,6 +23,7 @@ from twisted.spread import pb
 from twisted.python import log
 from twisted.python.failure import Failure
 from twisted.web.util import formatFailure
+from twisted.python.reflect import accumulateClassList
 
 from buildbot import interfaces, locks, util
 from buildbot.status import progress
@@ -116,8 +117,7 @@ class RemoteCommand(pb.Referenceable):
         cmd_args = self.args
         if cmd_args.has_key("logfiles") and cmd_args["logfiles"]:
             cmd_args = cmd_args.copy()
-            properties = self.step.build.getProperties()
-            cmd_args["logfiles"] = properties.render(cmd_args["logfiles"])
+            cmd_args["logfiles"] = self.step.build.render(cmd_args["logfiles"])
 
         # This method only initiates the remote command.
         # We will receive remote_update messages as the command runs.
@@ -783,12 +783,17 @@ class BuildStep:
         if self.progress:
             self.progress.start()
 
-        doStep = defer.succeed(True)
         if isinstance(self.doStepIf, bool):
-            if not self.doStepIf:
-                doStep = defer.succeed(False)
+            doStep = defer.succeed(self.doStepIf)
         else:
             doStep = defer.maybeDeferred(self.doStepIf, self)
+
+        renderables = []
+        accumulateClassList(self.__class__, 'renderables', renderables)
+
+        for renderable in renderables:
+            setattr(self, renderable, self.build.render(getattr(self, renderable)))
+
         doStep.addCallback(self._startStep_3)
         return doStep
 

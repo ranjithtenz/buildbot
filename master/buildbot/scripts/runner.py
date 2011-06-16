@@ -22,7 +22,7 @@
 
 import os, sys, stat, re, time
 from twisted.python import usage, util, runtime
-from twisted.internet import defer
+from twisted.internet import defer, reactor
 
 from buildbot.interfaces import BuildbotNotRunningError
 
@@ -483,7 +483,7 @@ def upgradeMaster(config):
 
     if rc == 0:
         from buildbot.db import connector
-        from buildbot.buildmaster import BuildMaster
+        from buildbot.master import BuildMaster
 
         if not config['quiet']: print "upgrading database"
         db = connector.DBConnector(BuildMaster(config['basedir']),
@@ -896,14 +896,18 @@ def sendchange(config, runReactor=False):
     d = s.send(branch, revision, comments, files, who=who, category=category, when=when,
                properties=properties, repository=repository, project=project,
                revlink=revlink)
+
+    def printSuccess(_):
+        print "change sent successfully"
+
     if runReactor:
         status = [True]
         def failed(res):
             status[0] = False
             s.printFailure(res)
-        d.addCallbacks(s.printSuccess, failed)
-        d.addBoth(s.stop)
-        s.run()
+        d.addCallbacks(printSuccess, failed)
+        d.addBoth(lambda _ : reactor.stop())
+        reactor.run()
         return status[0]
     return d
 
@@ -946,6 +950,8 @@ class TryOptions(OptionsWithOptionsFile):
          "Password for PB authentication"],
         ["who", "w", None,
          "Who is responsible for the try build"],
+        ["comment", "C", None,
+         "A comment which can be used in notifications for this build"],
 
         ["diff", None, None,
          "Filename of a patch to use instead of scanning a local tree. "
@@ -1006,6 +1012,7 @@ class TryOptions(OptionsWithOptionsFile):
         [ 'try_password', 'passwd' ],
         [ 'try_master', 'master' ],
         [ 'try_who', 'who' ],
+        [ 'try_comment', 'comment' ],
         #[ 'try_wait', 'wait' ], <-- handled in postOptions
         [ 'try_masterstatus', 'masterstatus' ],
         # Deprecated command mappings from the quirky old days:
