@@ -281,3 +281,6 @@ class Mercurial(Source):
             command += ['--rev', self.branch or 'default']
         d = self._dovccmd(command)
         return d
+
+    def evaluateCommand(self, cmd):
+        return cmd.rc
