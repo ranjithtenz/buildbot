@@ -571,12 +571,12 @@ class BuildMaster(service.MultiService):
 
         self.db = connector.DBConnector(self, db_url, self.basedir)
         self.db.setServiceParent(self)
-
         # make sure it's up to date
         d = self.db.model.is_current()
         def check_current(res):
             if res:
                 return # good to go!
+
             raise exceptions.DatabaseNotReadyError, textwrap.dedent("""
                 The Buildmaster database needs to be upgraded before this version of buildbot
                 can run.  Use the following command-line
@@ -586,6 +586,7 @@ class BuildMaster(service.MultiService):
                 you must specify the connector string on the upgrade-master command line:
                     buildbot upgrade-master --db=<db-url> path/to/master
                 """)
+
         d.addCallback(check_current)
 
         # set up the stuff that depends on the db

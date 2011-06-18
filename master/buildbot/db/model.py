@@ -389,7 +389,6 @@ class Model(base.DBConnectorComponent):
                 db_version = schema.version
             except exceptions.DatabaseNotControlledError:
                 return False
-
             return db_version == repo_version
         return self.db.pool.do_with_engine(thd)
 

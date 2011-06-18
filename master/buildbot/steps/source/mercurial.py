@@ -13,6 +13,8 @@
 #
 # Copyright Buildbot Team Members
 
+## Source step code for mercurial
+
 from twisted.python import log
 from twisted.internet import defer
 
@@ -82,12 +84,15 @@ class Mercurial(Source):
                                  branchType=branchType,
                                  )
 
+        assert self.mode in ['incremental', 'full']
+
         if repourl and baseurl:
             raise ValueError("you must provide exactly one of repourl and"
                              " baseurl")
         self.repourl = self.repourl and _ComputeRepositoryURL(self.repourl)
         self.baseurl = self.baseurl and _ComputeRepositoryURL(self.baseurl)
 
+        
     def startVC(self, branch, revision, patch):
         
         slavever = self.slaveVersion('hg')
@@ -95,6 +100,8 @@ class Mercurial(Source):
             raise BuildSlaveTooOldError("slave is too old, does not know "
                                         "about hg")
         self.branch = branch or 'default'
+        self.revision = revision
+
         if branch:
             assert self.branchType == 'dirname' and not self.repourl
             # The restriction is we can't configure named branch here.
@@ -102,8 +109,6 @@ class Mercurial(Source):
             self.repourl = self.baseurl + (branch or '')
         else:
             assert self.branchType == 'inrepo' and not self.baseurl
-        self.revision = revision
-        assert self.mode in ['incremental', 'full']
         self.stdio_log = self.addLog("stdio")
 
         if self.mode == 'incremental':
@@ -240,7 +245,9 @@ class Mercurial(Source):
         cmd.useLog(self.stdio_log, False)
         log.msg("Mercurial command : %s" % ("hg ".join(command), ))
         d = self.runCommand(cmd)
-        d.addCallback(lambda _: self.evaluateCommand(cmd))
+        def evaluateCommand(cmd):
+            return cmd.rc
+        d.addCallback(lambda _: evaluateCommand(cmd))
         d.addErrback(self.failed)
         return d
 
@@ -274,6 +281,3 @@ class Mercurial(Source):
             command += ['--rev', self.branch or 'default']
         d = self._dovccmd(command)
         return d
-
-    def evaluateCommand(self, cmd):
-        return cmd.rc
