@@ -131,6 +131,7 @@ class Mercurial(Source):
         d.addCallback(lambda _: self._dovccmd(['clone', '--noupdate'
                                                , self.repourl, "."]))
         d.addCallback(self._update)
+        # do necessary if update fails. #1990
         return d
 
     def finish(self, res):
@@ -170,6 +171,7 @@ class Mercurial(Source):
 
         d.addCallback(_cmd)
         d.addCallback(self._dovccmd)
+        d.addCallback(self._abandonOnFailure)
         d.addCallback(self._checkBranchChange)
         def _action(res):
             #fix me
@@ -184,6 +186,7 @@ class Mercurial(Source):
                 log.msg(msg)
                 return self._update(None)
         d.addCallback(_action)
+        # Do neccessary if update fails. #1990
         return d
 
     def parseGotRevision(self, _):
@@ -197,6 +200,15 @@ class Mercurial(Source):
             return res
         d.addCallback(_setrev)
         return d
+
+    def _abandonOnFailure(self, rc):
+        if type(rc) is not int:
+            log.msg("weird, _abandonOnFailure was given rc=%s (%s)" % \
+                    (rc, type(rc)))
+        assert isinstance(rc, int)
+        if rc != 0:
+            raise AbandonChain(rc)
+        return rc
 
     def _checkBranchChange(self, _):
         d = self._getCurrentBranch()
@@ -219,6 +231,7 @@ class Mercurial(Source):
         def _pullUpdate():
             d = self._dovccmd(['pull' , self.repourl])
             d.addCallback(self._update)
+            # do necessary if update fails. #1990
             return d
         return _pullUpdate()
 
@@ -234,11 +247,10 @@ class Mercurial(Source):
     def _getCurrentBranch(self):
         d = self._dovccmd(['identify', '--branch'])
         def _getbranch(res):
-            if res != 0:
-                raise AbandonChain(-1)
             branch = self.getLog('stdio').readlines()[-1].strip()
             log.msg("Current branch is %s" % (branch, ))
             return branch
+        d.addCallback(self._abandonOnFailure)
         d.addCallback(_getbranch)
         # d.addErrback(self.failed)
         return d
@@ -261,9 +273,7 @@ class Mercurial(Source):
         else:
             command += ['--rev', self.branch or 'default']
         d = self._dovccmd(command)
-        def _checkResult(res):
-            if res != 0:
-                log.msg("Update failed, fallback to clobber")
-                return self.clobber()
-        d.addCallback(_checkResult)
         return d
+
+    def evaluateCommand(self, cmd):
+        return cmd.rc
