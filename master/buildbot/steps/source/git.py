@@ -101,30 +101,31 @@ class Git(Source):
     def clobber(self):
         return FAILURE
 
+
     def incremental(self):
         d = self._sourcedirIsUpdatable()
         def fetch(res):
-            #if revision exits checkout to that revision
+           #if revision exits checkout to that revision
             # else fetch and update
-            if res != 0:
-                return self._dovccmd(['reset', '--hard', self.revision])
+            if res == 0:
+                d = self._dovccmd(['reset', '--hard', self.revision])
             else:
-                return self._fetch()
+                d = self._fetch()
             return d
 
         def cmd(updatable):
-            d = defer.succeed(None)
             if updatable:
                 if self.revision:
-                    d.addCallback(self._dovccmd(['cat-file', '-e', self.revison]))
+                    d = self._dovccmd(['cat-file', '-e', self.revison])
                 else:
-                    d.addCallback(lambda _: 1)
+                    d = defer.succeed(1)
                 d.addCallback(fetch)
             else:
-                d.addCallback(self._full())
+                d = self._full()
+            return d
+
         d.addCallback(cmd)
         return d
-
     def finish(self, res):
         d = defer.succeed(res)
         def _gotResults(results):
@@ -188,13 +189,14 @@ class Git(Source):
         # with Git 1.7.2 or later.
         if self.progress:
             command.append('--progress')
+
         d = self._dovccmd(command)
-        def checkout():
+        def checkout(_):
             if self.revision:
                 rev = self.revision
             else:
                 rev = 'FETCH_HEAD'
-            command = ['reset', '--hard', head]
+            command = ['reset', '--hard', rev]
             return self._dovccmd(command)
         d.addCallback(checkout)
         return d
