@@ -1,4 +1,4 @@
-@code{BuildStep}s are usually specified in the buildmaster's
+Build steps are usually specified in the buildmaster's
 configuration file, in a list that goes into the @code{BuildFactory}.
 The @code{BuildStep} instances in this list are used as templates to
 construct new independent copies for each build (so that state can be

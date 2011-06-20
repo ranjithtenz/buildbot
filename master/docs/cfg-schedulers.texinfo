@@ -37,6 +37,8 @@ sched = Scheduler(name="quick", builderNames=['lin', 'win'])
 There are several common arguments for schedulers, although not all are
 available with all schedulers.
 
+@cindex Properties
+
 @table @code
 @item name
 
@@ -49,7 +51,6 @@ This is the set of builders which this scheduler should trigger, specified
 as a list of names (strings).
 
 @item properties
-@cindex Properties
 
 This is a dictionary specifying properties that will be transmitted to all
 builds started by this scheduler.  The @code{owner} property may be of
@@ -180,7 +181,7 @@ The arguments to this scheduler are:
 @item fileIsImportant
 
 @item change_filter
-@pxref{Configuring Schedulers}
+@xref{Configuring Schedulers}
 
 @item treeStableTimer
 The scheduler will wait for this many seconds before starting the
@@ -253,7 +254,7 @@ The arguments to this scheduler are:
 @item fileIsImportant
 
 @item change_filter
-@pxref{Configuring Schedulers}
+@xref{Configuring Schedulers}
 
 @item treeStableTimer
 The scheduler will wait for this many seconds before starting the
@@ -406,7 +407,7 @@ The full list of parameters is:
 @code{None} here means the default branch, and will not match other branches!
 
 @item change_filter
-@pxref{Configuring Schedulers}.  Note that @code{fileIsImportant} and
+@xref{Configuring Schedulers}.  Note that @code{fileIsImportant} and
 @code{change_filter} are only relevant if @code{onlyIfChanged} is true.
 
 @item minute
@@ -415,17 +416,17 @@ to 0, meaning an hourly build.
 
 @item hour
 The hour of the day on which to start the build, in 24-hour notation.
-This defaults to *, meaning every hour.
+This defaults to @code{*}, meaning every hour.
 
 @item dayOfMonth
-The day of the month to start a build.  This defauls to *, meaning every day.
+The day of the month to start a build.  This defauls to @code{*}, meaning every day.
 
 @item month
 The month in which to start the build, with January = 1.  This defaults
 to *, meaning every month.
 
 @item dayOfWeek
-The day of the week to start a build, with Monday = 0.  This defauls to *,
+The day of the week to start a build, with Monday = 0.  This defaults to @code{*},
 meaning every day of the week.  If @code{dayOfMonth} and @code{dayOfWeek} are
 both specified, builds will be started when @emph{either} parameter matches.
 

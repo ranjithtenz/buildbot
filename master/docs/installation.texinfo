@@ -142,7 +142,8 @@ together.
 
 @heading Installation From PyPI
 
-The easiest way to install Buildbot is using 'pip'.  For the master:
+The easiest way to install Buildbot is using @code{pip}.  For the master:
+
 @example
 pip install buildbot
 @end example
@@ -247,7 +248,7 @@ create-master} command to create the directory and populate it with
 startup files:
 
 @example
-buildbot create-master -r @var{basedir}
+buildbot create-master -r $basedir
 @end example
 
 You will need to create a configuration file (@pxref{Configuration})
@@ -326,7 +327,7 @@ upgrade process adds and modifies files in the buildmaster's base
 directory to make it compatible with the new code.
 
 @example
-buildbot upgrade-master @var{basedir}
+buildbot upgrade-master $BASEDIR
 @end example
 
 This command will also scan your @file{master.cfg} file for
@@ -530,7 +531,7 @@ Create the buildslave
 Now run the 'buildslave' command as follows:
 
 @example
-buildslave create-slave @var{BASEDIR} @var{MASTERHOST}:@var{PORT} @var{SLAVENAME} @var{PASSWORD}
+buildslave create-slave $BASEDIR $MASTERHOST:$PORT $SLAVENAME $PASSWORD
 @end example
 
 This will create the base directory and a collection of files inside,
@@ -749,9 +750,9 @@ and @code{buildslave} commands, as appropriate:
 
 @example
 # start a master
-buildbot start @var{BASEDIR}
+buildbot start $BASEDIR
 # start a slave
-buildslave start @var{SLAVE_BASEDIR}
+buildslave start $SLAVE_BASEDIR
 @end example
 
 The @var{BASEDIR} is option and can be omitted if the current directory
@@ -781,7 +782,7 @@ usually provided with linux systems. Other unices may have a cron that
 doesn't understand @@reboot}:
 
 @example
-@@reboot buildbot start @var{BASEDIR}
+@@reboot buildbot start $BASEDIR
 @end example
 
 When you run @command{crontab} to set this up, remember to do it as
@@ -853,9 +854,9 @@ lines to be added to the log.
 To stop a buildmaster or buildslave manually, use:
 
 @example
-buildbot stop @var{BASEDIR}
+buildbot stop $BASEDIR
 # or
-buildslave stop @var{SLAVE_BASEDIR}
+buildslave stop $SLAVE_BASEDIR
 @end example
 
 This simply looks for the @file{twistd.pid} file and kills whatever
@@ -871,23 +872,23 @@ signal support, and won't work on Windows. The following shortcut is
 available:
 
 @example
-buildbot reconfig @var{BASEDIR}
+buildbot reconfig $BASEDIR
 @end example
 
 When you update the Buildbot code to a new release, you will need to
 restart the buildmaster and/or buildslave before it can take advantage
-of the new code. You can do a @code{buildbot stop @var{BASEDIR}} and
-@code{buildbot start @var{BASEDIR}} in quick succession, or you can
+of the new code. You can do a @code{buildbot stop $BASEDIR} and
+@code{buildbot start $BASEDIR} in quick succession, or you can
 use the @code{restart} shortcut, which does both steps for you:
 
 @example
-buildbot restart @var{BASEDIR}
+buildbot restart $BASEDIR
 @end example
 
 Buildslaves can similarly be restarted with:
 
 @example
-buildslave restart @var{BASEDIR}
+buildslave restart $BASEDIR
 @end example
 
 There are certain configuration changes that are not handled cleanly
@@ -983,7 +984,7 @@ and re-start the buildslave.
 When the buildmaster is restarted, all slaves will be disconnected, and will
 attempt to reconnect as usual. The reconnect time will depend upon how long the
 buildmaster is offline (i.e. how far up the exponential backoff curve the
-slaves have travelled). Again, @code{buildslave restart @var{BASEDIR}} will
+slaves have travelled). Again, @code{buildslave restart $BASEDIR} will
 speed up the process.
 
 @node Contrib Scripts
