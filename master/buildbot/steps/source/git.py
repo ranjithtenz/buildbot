@@ -15,6 +15,7 @@
 
 from twisted.python import log
 from twisted.internet import defer
+from twisted.web.util import formatFailure
 
 from buildbot.process import buildstep
 from buildbot.steps.source import Source, _ComputeRepositoryURL
@@ -111,30 +112,34 @@ class Git(Source):
         d.addCallback(lambda _: self._full())
         return d
 
-    def incremental(self):
-        d = self._sourcedirIsUpdatable()
-        def fetch(res):
-           #if revision exits checkout to that revision
-            # else fetch and update
-            if res == 0:
-                return self._dovccmd(['reset', '--hard', self.revision])
-            else:
-                return self._fetch()
+    def failed(self, why):
+        # copied from buildstep. changed exception to failure
+        log.msg("BuildStep.failed, traceback follows")
+        log.err(why)
+        try:
+            if self.progress:
+                self.progress.finish()
+            self.addHTMLLog("err.html", formatFailure(why))
+            self.addCompleteLog("err.text", why.getTraceback())
+            self.step_status.setText(["failed"])
+            self.step_status.setText2([self.name])
+            self.step_status.stepFinished(FAILURE)
+        except:
+            log.msg("exception during failure processing")
+            log.err()
 
-        def cmd(updatable):
-            if updatable:
-                if self.revision:
-                    d = self._dovccmd(['cat-file', '-e', self.revision])
-                else:
-                    d = defer.succeed(1)
-                d.addCallback(fetch)
-            else:
-                d = self._full()
-            return d
+        try:
+            self.releaseLocks()
+        except:
+            log.msg("exception while releasing locks")
+            log.err()
 
-        d.addCallback(cmd)
-        return d
+        log.msg("BuildStep.failed now firing callback")
+        self.deferred.callback(FAILURE)
+
     def finish(self, res):
+        # This function and stepFailed does almost same thing
+        # but invoked at different palces
         d = defer.succeed(res)
         def _gotResults(results):
             self.setStatus(self.cmd, results)
@@ -143,7 +148,6 @@ class Git(Source):
             return results
         d.addCallback(_gotResults)
         d.addCallbacks(self.finished, self.checkDisconnect)
-        d.addErrback(self.failed)
         return d
 
     def fresh(self, _):
@@ -170,6 +174,30 @@ class Git(Source):
             d.addCallback(self.clobber)
         return d
 
+    def incremental(self):
+        d = self._sourcedirIsUpdatable()
+        def fetch(res):
+            # if revision exits checkout to that revision
+            # else fetch and update
+            if res == 0:
+                return self._dovccmd(['reset', '--hard', self.revision])
+            else:
+                return self._fetch()
+
+        def cmd(updatable):
+            if updatable:
+                if self.revision:
+                    d = self._dovccmd(['cat-file', '-e', self.revision])
+                else:
+                    d = defer.succeed(1)
+                d.addCallback(fetch)
+            else:
+                d = self._full()
+            return d
+
+        d.addCallback(cmd)
+        return d
+
     def parseGotRevision(self, _):
         d = self._dovccmd(['rev-parse', 'HEAD'])
         def setrev(res):
@@ -194,13 +222,14 @@ class Git(Source):
     def _dovccmd(self, command):
         cmd = buildstep.RemoteShellCommand(self.workdir, ['git'] + command)
         cmd.useLog(self.stdio_log, False)
-        log.msg("Git command : %s" % ("git ".join(command), ))
+        log.msg("Starting git command : git %s" % (" ".join(command), ))
         d = self.runCommand(cmd)
         def evaluateCommand(cmd):
+            if cmd.rc != 0:
+                log.msg("Source step failed while running command %s" % cmd)
+                raise AbandonChain(cmd.rc)
             return cmd.rc
         d.addCallback(lambda _: evaluateCommand(cmd))
-        # Fail if non zero value is returned
-        d.addCallback(self._abandonOnFailure)
         return d
 
     def _fetch(self):
