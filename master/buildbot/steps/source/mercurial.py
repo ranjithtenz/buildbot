@@ -71,9 +71,9 @@ class Mercurial(Source):
         self.baseurl = baseurl
         self.branch = defaultBranch
         self.branchType = branchType
-        self.clobberOnBranchChange = clobberOnBranchChange
         self.method = method
         self.clobbercount = 0
+        self.clobberOnBranchChange = clobberOnBranchChange
         Source.__init__(self, **kwargs)
         self.mode = mode
         self.addFactoryArguments(repourl=repourl,
@@ -126,6 +126,8 @@ class Mercurial(Source):
         return d
 
     def clobber(self):
+        # This is not going to happen anymore.
+        # FIX ME
         self.clobbercount += 1
 
         if self.clobbercount > 3:

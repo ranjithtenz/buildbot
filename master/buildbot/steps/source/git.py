@@ -28,7 +28,7 @@ class Git(Source):
 
     def __init__(self, repourl=None, branch='master', mode='incremental',
                  method=None,ignore_ignores=None, submodule=False,
-                 progress=False, **kwargs):
+                 shallow=False, progress=False, **kwargs):
         """
         @type  repourl: string
         @param repourl: the URL which points at the git repository
@@ -53,6 +53,8 @@ class Git(Source):
         @param progress: Pass the --progress option when fetching. This
                          can solve long fetches getting killed due to
                          lack of output, but requires Git 1.7.2+.
+        @type  shallow: boolean
+        @param shallow: Use a shallow or clone, if possible
         """
 
         self.branch    = branch
@@ -60,6 +62,7 @@ class Git(Source):
         self.progress  = progress
         self.repourl   = repourl
         self.submodule = submodule
+        self.shallow   = shallow
         Source.__init__(self, **kwargs)
         self.addFactoryArguments(branch=branch,
                                  mode=mode,
@@ -95,12 +98,18 @@ class Git(Source):
         d.addErrback(self.failed)
         return d
 
-    def clean(self):
-        return defer.succeed(FAILURE)
+    def clean(self, _):
+        command = ['clean', '-f', '-d']
+        d = self._dovccmd(command)
+        d.addCallback(lambda _: self._fetch())
+        return d
 
-    def clobber(self):
-        return FAILURE
-
+    def clobber(self, _):
+        cmd = buildstep.LoggedRemoteCommand('rmdir', {'dir': self.workdir})
+        cmd.useLog(self.stdio_log, False)
+        d = self.runCommand(cmd)
+        d.addCallback(lambda _: self._full())
+        return d
 
     def incremental(self):
         d = self._sourcedirIsUpdatable()
@@ -108,15 +117,14 @@ class Git(Source):
            #if revision exits checkout to that revision
             # else fetch and update
             if res == 0:
-                d = self._dovccmd(['reset', '--hard', self.revision])
+                return self._dovccmd(['reset', '--hard', self.revision])
             else:
-                d = self._fetch()
-            return d
+                return self._fetch()
 
         def cmd(updatable):
             if updatable:
                 if self.revision:
-                    d = self._dovccmd(['cat-file', '-e', self.revison])
+                    d = self._dovccmd(['cat-file', '-e', self.revision])
                 else:
                     d = defer.succeed(1)
                 d.addCallback(fetch)
@@ -138,27 +146,40 @@ class Git(Source):
         d.addErrback(self.failed)
         return d
 
-    def fresh(self):
-        return FAILURE
+    def fresh(self, _):
+        command = ['clean', '-f', '-d', '-x']
+        d = self._dovccmd(command)
+        d.addCallback(lambda _: self._fetch())
+        return d
 
     def full(self):
+        d = self._sourcedirIsUpdatable()
+        def makeFullClone(updatable):
+            if not updatable:
+                log.msg("No git repo present, making full clone")
+                return self._full()
+            else:
+                return defer.succeed(0)
+        d.addCallback(makeFullClone)
+
         if self.method == 'clean':
-            return self.clean()
+            d.addCallback(self.clean)
         elif self.method == 'fresh':
-            return self.fresh()
+            d.addCallback(self.fresh)
         elif self.method == 'clobber':
-            return self.clobber()
+            d.addCallback(self.clobber)
+        return d
 
     def parseGotRevision(self, _):
         d = self._dovccmd(['rev-parse', 'HEAD'])
-        def _setrev(res):
+        def setrev(res):
             revision = self.getLog('stdio').readlines()[-1].strip()
             if len(revision) != 40:
                 return FAILURE
             log.msg("Got Git revision %s" % (revision, ))
             self.setProperty('got_revision', revision, 'Source')
             return res
-        d.addCallback(_setrev)
+        d.addCallback(setrev)
         return d
 
     def _abandonOnFailure(self, rc):
@@ -178,7 +199,8 @@ class Git(Source):
         def evaluateCommand(cmd):
             return cmd.rc
         d.addCallback(lambda _: evaluateCommand(cmd))
-        d.addErrback(self.failed)
+        # Fail if non zero value is returned
+        d.addCallback(self._abandonOnFailure)
         return d
 
     def _fetch(self):
@@ -199,15 +221,28 @@ class Git(Source):
             command = ['reset', '--hard', rev]
             return self._dovccmd(command)
         d.addCallback(checkout)
+        # update submodule
+        if self.submodule:
+            d.addCallback(self._dovccmd(['submodule', 'update', '--recursive']))
         return d
 
     def _full(self):
-        command = ['clone', self.repourl, '.']
+        if self.shallow:
+            command = ['clone', '--depth', '1', self.repourl, '.']
+        else:
+            command = ['clone', self.repourl, '.']
+        #Fix references
         if self.progress:
             command.append('--progress')
         d = self._dovccmd(command)
+        # If revision specified checkout that revision
         if self.revision:
             d.addCallback(self._dovccmd(['reset', '--hard', self.revision]))
+        # init and update submodules, recurisively. If there's not recursion
+        # it will simply not do it.
+        if self.submodule:
+            d.addCallback(self._dovccmd(['submodule', 'update', '--init',
+                                        '--recursive']))
         return d
 
     def _sourcedirIsUpdatable(self):
