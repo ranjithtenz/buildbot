@@ -20,7 +20,7 @@ from twisted.web.util import formatFailure
 from buildbot.process import buildstep
 from buildbot.steps.source import Source, _ComputeRepositoryURL
 from buildbot.status.results import FAILURE
-from buildslave.exceptions import AbandonChain
+from buildbot.steps.source.exceptions import AbandonChain
 
 class Git(Source):
     """ Class for Git with all the smarts """
@@ -210,15 +210,6 @@ class Git(Source):
         d.addCallback(setrev)
         return d
 
-    def _abandonOnFailure(self, rc):
-        if type(rc) is not int:
-            log.msg("weird, _abandonOnFailure was given rc=%s (%s)" % \
-                    (rc, type(rc)))
-        assert isinstance(rc, int)
-        if rc != 0:
-            raise AbandonChain(rc)
-        return rc
-
     def _dovccmd(self, command):
         cmd = buildstep.RemoteShellCommand(self.workdir, ['git'] + command)
         cmd.useLog(self.stdio_log, False)
@@ -285,3 +276,4 @@ class Git(Source):
             return True
         d.addCallback(_fail)
         return d
+
