@@ -223,9 +223,9 @@ class Mercurial(Source):
     def _checkBranchChange(self, _):
         d = self._getCurrentBranch()
         def _compare(current_branch):
+            msg = "Working dir is on in-repo branch '%s' and build needs '%s'." % \
+                (current_branch, self.branch)
             if current_branch != self.branch:
-                msg = "Working dir is on in-repo branch '%s' and build needs '%s'." % \
-                    (current_branch, self.branch)
                 if self.clobberOnBranchChange:
                     msg += ' Clobbering.'
                     log.msg(msg)
@@ -235,6 +235,8 @@ class Mercurial(Source):
                     log.msg(msg)
                     return self._update(None)
             else:
+                msg += ' Updating.'
+                log.msg(msg)
                 return self._update(None)
         d.addCallback(_compare)
         return d
