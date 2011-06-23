@@ -29,7 +29,7 @@ class Git(Source):
 
     def __init__(self, repourl=None, branch='master', mode='incremental',
                  method=None,ignore_ignores=None, submodule=False,
-                 shallow=False, progress=False, **kwargs):
+                 shallow=False, progress=False, retryFetch=True, **kwargs):
         """
         @type  repourl: string
         @param repourl: the URL which points at the git repository
@@ -60,10 +60,12 @@ class Git(Source):
 
         self.branch    = branch
         self.method    = method
-        self.progress  = progress
+        self.prog  = progress
         self.repourl   = repourl
         self.submodule = submodule
         self.shallow   = shallow
+        self.retryFetch = retryFetch
+        self.fetchcount = 0
         Source.__init__(self, **kwargs)
         self.addFactoryArguments(branch=branch,
                                  mode=mode,
@@ -71,6 +73,7 @@ class Git(Source):
                                  progress=progress,
                                  repourl=repourl,
                                  submodule=submodule,
+                                 retryFetch=retryFetch,
                                  )
 
         self.mode = mode
@@ -102,7 +105,8 @@ class Git(Source):
     def clean(self, _):
         command = ['clean', '-f', '-d']
         d = self._dovccmd(command)
-        d.addCallback(lambda _: self._fetch())
+        d.addCallback(self._fetch)
+        d.addCallback(self._updateSubmodule)
         return d
 
     def clobber(self, _):
@@ -153,7 +157,8 @@ class Git(Source):
     def fresh(self, _):
         command = ['clean', '-f', '-d', '-x']
         d = self._dovccmd(command)
-        d.addCallback(lambda _: self._fetch())
+        d.addCallback(self._fetch)
+        d.addCallback(self._updateSubmodule)
         return d
 
     def full(self):
@@ -182,8 +187,9 @@ class Git(Source):
             if res == 0:
                 return self._dovccmd(['reset', '--hard', self.revision])
             else:
-                return self._fetch()
+                return self._fetch(None)
 
+        # rename the function
         def cmd(updatable):
             if updatable:
                 if self.revision:
@@ -196,6 +202,7 @@ class Git(Source):
             return d
 
         d.addCallback(cmd)
+        d.addCallback(self._updateSubmodule)
         return d
 
     def parseGotRevision(self, _):
@@ -210,26 +217,29 @@ class Git(Source):
         d.addCallback(setrev)
         return d
 
-    def _dovccmd(self, command):
+    def _dovccmd(self, command, abandonOnFailure=True):
         cmd = buildstep.RemoteShellCommand(self.workdir, ['git'] + command)
         cmd.useLog(self.stdio_log, False)
         log.msg("Starting git command : git %s" % (" ".join(command), ))
         d = self.runCommand(cmd)
         def evaluateCommand(cmd):
-            if cmd.rc != 0:
+            if abandonOnFailure and cmd.rc != 0:
                 log.msg("Source step failed while running command %s" % cmd)
                 raise AbandonChain(cmd.rc)
             return cmd.rc
         d.addCallback(lambda _: evaluateCommand(cmd))
         return d
 
-    def _fetch(self):
+    def _fetch(self, _):
+        self.fetchcount += 1
+        if self.fetchcount > 3:
+            raise Exception("More than 3 retries to fetch, aborting")
         command = ['fetch', '-t', self.repourl, self.branch]
         # If the 'progress' option is set, tell git fetch to output
         # progress information to the log. This can solve issues with
         # long fetches killed due to lack of output, but only works
         # with Git 1.7.2 or later.
-        if self.progress:
+        if self.prog:
             command.append('--progress')
 
         d = self._dovccmd(command)
@@ -239,11 +249,15 @@ class Git(Source):
             else:
                 rev = 'FETCH_HEAD'
             command = ['reset', '--hard', rev]
-            return self._dovccmd(command)
+            return self._dovccmd(command, not self.retryFetch)
         d.addCallback(checkout)
-        # update submodule
-        if self.submodule:
-            d.addCallback(self._dovccmd(['submodule', 'update', '--recursive']))
+        def retry(res):
+            if res != 0 and self.retryFetch:
+                log.msg("Fetch failed, retry no: %s" % str(self.fetchcount))
+                return self._fetch(None)
+            else:
+                return res
+        d.addCallback(retry)
         return d
 
     def _full(self):
@@ -252,7 +266,7 @@ class Git(Source):
         else:
             command = ['clone', self.repourl, '.']
         #Fix references
-        if self.progress:
+        if self.prog:
             command.append('--progress')
         d = self._dovccmd(command)
         # If revision specified checkout that revision
@@ -277,3 +291,8 @@ class Git(Source):
         d.addCallback(_fail)
         return d
 
+    def _updateSubmodule(self, _):
+        if self.submodule:
+            return self._dovccmd(['submodule', 'update', '--recursive'])
+        else:
+            return defer.succeed(0)
