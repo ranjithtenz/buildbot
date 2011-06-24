@@ -101,10 +101,7 @@ class Mercurial(Source):
         self.branch = branch or 'default'
         self.revision = revision
 
-        if branch:
-            assert self.branchType == 'dirname' and not self.repourl
-            # The restriction is we can't configure named branch here.
-            # that's why 'not self.repourl'.
+        if branch and self.branchType == 'dirname':
             self.repourl = self.baseurl + (branch or '')
         else:
             assert self.branchType == 'inrepo' and not self.baseurl
@@ -177,6 +174,9 @@ class Mercurial(Source):
         return d
 
     def full(self):
+        if self.method == 'clobber':
+            return self.clobber(None)
+
         d = self._sourcedirIsUpdatable()
         def makeFullClone(updatable):
             if not updatable:
@@ -190,8 +190,8 @@ class Mercurial(Source):
             d.addCallback(self.clean)
         elif self.method == 'fresh':
             d.addCallback(self.fresh)
-        elif self.method == 'clobber':
-            d.addCallback(self.clobber)
+        else:
+            raise ValueError("Unknown method, check your configuration")
         return d
 
     def incremental(self):
@@ -229,7 +229,7 @@ class Mercurial(Source):
                 if self.clobberOnBranchChange:
                     msg += ' Clobbering.'
                     log.msg(msg)
-                    return self.clobber()
+                    return self.clobber(None)
                 else:
                     msg += ' Updating.'
                     log.msg(msg)
