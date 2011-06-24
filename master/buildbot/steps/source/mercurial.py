@@ -15,7 +15,7 @@
 
 ## Source step code for mercurial
 
-from twisted.python import log
+from twisted.python import log, failure
 from twisted.internet import defer
 from twisted.web.util import formatFailure
 
@@ -255,7 +255,7 @@ class Mercurial(Source):
         def evaluateCommand(cmd):
             if cmd.rc != 0:
                 log.msg("Source step failed while running command %s" % cmd)
-                raise AbandonChain(cmd.rc)
+                raise failure.Failure(cmd.rc)
             return cmd.rc
         d.addCallback(lambda _: evaluateCommand(cmd))
         return d

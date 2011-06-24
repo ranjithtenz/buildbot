@@ -13,7 +13,7 @@
 #
 # Copyright Buildbot Team Members
 
-from twisted.python import log
+from twisted.python import log, failure
 from twisted.internet import defer
 from twisted.web.util import formatFailure
 
@@ -62,9 +62,9 @@ class Git(Source):
         self.method    = method
         self.prog  = progress
         self.repourl   = repourl
+        self.retryFetch = retryFetch
         self.submodule = submodule
         self.shallow   = shallow
-        self.retryFetch = retryFetch
         self.fetchcount = 0
         Source.__init__(self, **kwargs)
         self.addFactoryArguments(branch=branch,
@@ -73,6 +73,7 @@ class Git(Source):
                                  progress=progress,
                                  repourl=repourl,
                                  submodule=submodule,
+                                 shallow=shallow,
                                  retryFetch=retryFetch,
                                  )
 
@@ -107,6 +108,7 @@ class Git(Source):
         d = self._dovccmd(command)
         d.addCallback(self._fetch)
         d.addCallback(self._updateSubmodule)
+        d.addCallback(self._cleanSubmodule)
         return d
 
     def clobber(self, _):
@@ -159,9 +161,13 @@ class Git(Source):
         d = self._dovccmd(command)
         d.addCallback(self._fetch)
         d.addCallback(self._updateSubmodule)
+        d.addCallback(self._cleanSubmodule)
         return d
 
     def full(self):
+        if self.method == 'clobber':
+            return self.clobber(None)
+
         d = self._sourcedirIsUpdatable()
         def makeFullClone(updatable):
             if not updatable:
@@ -175,8 +181,6 @@ class Git(Source):
             d.addCallback(self.clean)
         elif self.method == 'fresh':
             d.addCallback(self.fresh)
-        elif self.method == 'clobber':
-            d.addCallback(self.clobber)
         return d
 
     def incremental(self):
@@ -223,9 +227,9 @@ class Git(Source):
         log.msg("Starting git command : git %s" % (" ".join(command), ))
         d = self.runCommand(cmd)
         def evaluateCommand(cmd):
-            if abandonOnFailure and cmd.rc != 0:
+            if abandonOnFailure and cmd.rc == 0:
                 log.msg("Source step failed while running command %s" % cmd)
-                raise AbandonChain(cmd.rc)
+                raise failure.Failure(cmd.rc)
             return cmd.rc
         d.addCallback(lambda _: evaluateCommand(cmd))
         return d
@@ -294,5 +298,14 @@ class Git(Source):
     def _updateSubmodule(self, _):
         if self.submodule:
             return self._dovccmd(['submodule', 'update', '--recursive'])
+        else:
+            return defer.succeed(0)
+
+    def _cleanSubmodule(self, _):
+        if self.submodule:
+            command = ['submodule', 'foreach', 'git', 'clean', '-f', '-d']
+            if self.mode == 'full' and self.method == 'fresh':
+                command.append('-x')
+            return self._dovccmd(command)
         else:
             return defer.succeed(0)
