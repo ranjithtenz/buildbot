@@ -115,9 +115,11 @@ class Expect(object):
 
     def runBehaviors(self, command):
         # apply updates
+        rc_set = False
         for upd in self.updates:
             if upd[0] == 'rc':
                 command.rc = upd[1]
+                rc_set = True
             elif upd[0] == 'err':
                 return defer.fail(upd[1])
             elif upd[0] == 'log':
@@ -128,6 +130,9 @@ class Expect(object):
                     command.logs[name].addStdout(streams['stdout'])
                 if 'stderr' in streams:
                     command.logs[name].addStderr(streams['stderr'])
+        if not rc_set:
+            raise AssertionError("no expectation set for command's rc: %s"
+                                 % self)
         return defer.succeed(self)
         # return Expect.runBehaviors(self, command)
 

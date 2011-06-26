@@ -28,7 +28,18 @@ class TestMercurial(sourcesteps.SourceStepMixin, unittest.TestCase):
     def tearDown(self):
         return self.tearDownSourceStep()
 
-    def test_mode_clean(self):
+    def test_repourl_and_baseURL(self):
+        self.assertRaises(ValueError, lambda :
+                mercurial.Mercurial(repourl='http://hg.mozilla.org',
+                                    baseURL="http://hg.mozilla.org"))
+    test_repourl_and_baseURL.todo = "baseURL, not baseurl"
+
+    def test_neither_repourl_nor_baseURL(self):
+        self.assertRaises(ValueError, lambda :
+                mercurial.Mercurial(mode="full"))
+    test_neither_repourl_nor_baseURL.todo = "baseURL, not baseurl"
+
+    def test_mode_full_clean(self):
         self.setupStep(
                 mercurial.Mercurial(repourl='http://hg.mozilla.org',
                                     mode='full', method='clean'))
@@ -66,7 +77,7 @@ class TestMercurial(sourcesteps.SourceStepMixin, unittest.TestCase):
         self.expectOutcome(result=SUCCESS, status_text=["update"])
         return self.runStep()
 
-    def test_mode_clean_no_existing_repo(self):
+    def test_mode_full_clean_no_existing_repo(self):
         self.setupStep(
                 mercurial.Mercurial(repourl='http://hg.mozilla.org',
                                     mode='full', method='clean'))
@@ -108,12 +119,13 @@ class TestMercurial(sourcesteps.SourceStepMixin, unittest.TestCase):
         self.expectOutcome(result=SUCCESS, status_text=["update"])
         return self.runStep()
 
-    def test_mode_clobber(self):
+    def test_mode_full_clobber(self):
         self.setupStep(
                 mercurial.Mercurial(repourl='http://hg.mozilla.org',
                                     mode='full', method='clobber'))
         self.expectCommands(
-            Expect('rmdir', dict(dir='wkdir')),
+            Expect('rmdir', dict(dir='wkdir'))
+            + 0,
             ExpectShell(workdir='wkdir',
                         command=['hg', '--verbose', 'clone', '--noupdate',
                                     'http://hg.mozilla.org', '.'])
@@ -132,15 +144,150 @@ class TestMercurial(sourcesteps.SourceStepMixin, unittest.TestCase):
         self.expectOutcome(result=SUCCESS, status_text=["update"])
         return self.runStep()
 
-    def test_mode_incremental(self):
+    def test_mode_full_fresh(self):
+        self.setupStep(
+                mercurial.Mercurial(repourl='http://hg.mozilla.org',
+                                    mode='full', method='fresh'))
+        self.expectCommands(
+            Expect('stat', dict(file='wkdir/.hg'))
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', '--config',
+                                 'extensions.purge=', 'purge', '--all'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'pull',
+                                 'http://hg.mozilla.org', '--branch',
+                                 'default'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'identify', '--branch'])
+            + ExpectShell.log('stdio',
+                stdout='default')
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'update',
+                                 '--clean', '--rev', 'default'])
+            # dummy output for not messing up output for next step
+            + ExpectShell.log('stdio',
+                stdout='\n')
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'identify',
+                                    '--id', '--debug'])
+            + ExpectShell.log('stdio',
+                stdout='f6ad368298bd941e934a41f3babc827b2aa95a1d')
+            + 0,
+        )
+        self.expectOutcome(result=SUCCESS, status_text=["update"])
+        return self.runStep()
+
+    def test_mode_full_fresh_no_existing_repo(self):
+        self.setupStep(
+                mercurial.Mercurial(repourl='http://hg.mozilla.org',
+                                    mode='full', method='fresh'))
+        self.expectCommands(
+            Expect('stat', dict(file='wkdir/.hg'))
+            + 1,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'clone',
+                                    'http://hg.mozilla.org', '.'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', '--config',
+                                 'extensions.purge=', 'purge', '--all'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'pull',
+                                 'http://hg.mozilla.org', '--branch',
+                                 'default'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'identify', '--branch'])
+            + ExpectShell.log('stdio',
+                stdout='default')
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'update',
+                                 '--clean', '--rev', 'default'])
+            # dummy output for not messing up output for next step
+            + ExpectShell.log('stdio',
+                stdout='\n')
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'identify',
+                                    '--id', '--debug'])
+            + ExpectShell.log('stdio',
+                stdout='f6ad368298bd941e934a41f3babc827b2aa95a1d')
+            + 0,
+        )
+        self.expectOutcome(result=SUCCESS, status_text=["update"])
+        return self.runStep()
+
+    def test_mode_incremental_no_existing_repo_dirname(self):
+        self.setupStep(
+                mercurial.Mercurial(baseurl='http://hg.mozilla.org',
+                                    mode='incremental', branchType='dirname'))
+        self.expectCommands(
+            Expect('stat', dict(file='wkdir/.hg'))
+            + 1, # does not exist
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'clone',
+                                 'http://hg.mozilla.org', '.', '--noupdate'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'update', '--clean',
+                                 '--rev', 'default'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'identify',
+                                    '--id', '--debug'])
+            + ExpectShell.log('stdio',
+                stdout='f6ad368298bd941e934a41f3babc827b2aa95a1d')
+            + 0,
+            )
+        self.expectOutcome(result=SUCCESS, status_text=["update"])
+        return self.runStep()
+
+    def test_mode_incremental_no_existing_repo_inrepo(self):
+        self.setupStep(
+                mercurial.Mercurial(repourl='http://hg.mozilla.org',
+                                    mode='incremental', branchType='inrepo'))
+        self.expectCommands(
+            Expect('stat', dict(file='wkdir/.hg'))
+            + 1, # does not exist
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'clone',
+                                 'http://hg.mozilla.org', '.', '--noupdate'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'identify', '--branch'])
+            + ExpectShell.log('stdio', stdout='default')
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'update', '--clean',
+                                 '--rev', 'default'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'identify',
+                                    '--id', '--debug'])
+            + ExpectShell.log('stdio',
+                stdout='f6ad368298bd941e934a41f3babc827b2aa95a1d')
+            + 0,
+            )
+        self.expectOutcome(result=SUCCESS, status_text=["update"])
+        return self.runStep()
+
+    def test_mode_incremental_existing_repo(self):
         self.setupStep(
                 mercurial.Mercurial(repourl='http://hg.mozilla.org',
                                     mode='incremental'))
         self.expectCommands(
-            Expect('stat', dict(file='wkdir/.hg')),
+            Expect('stat', dict(file='wkdir/.hg'))
+            + 0, # directory exists
             ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'clone',
-                                 'http://hg.mozilla.org', '.', '--noupdate'])
+                        command=['hg', '--verbose', 'pull',
+                                 'http://hg.mozilla.org'])
             + 0,
             ExpectShell(workdir='wkdir',
                         command=['hg', '--verbose', 'identify', '--branch'])
@@ -161,86 +308,6 @@ class TestMercurial(sourcesteps.SourceStepMixin, unittest.TestCase):
         self.expectOutcome(result=SUCCESS, status_text=["update"])
         return self.runStep()
 
-    def test_mode_fresh(self):
-        self.setupStep(
-                mercurial.Mercurial(repourl='http://hg.mozilla.org',
-                                    mode='full', method='fresh'))
-        self.expectCommands(
-            Expect('stat', dict(file='wkdir/.hg'))
-            + 0,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', '--config',
-                                 'extensions.purge=', 'purge', '--all'])
-            + 0,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'pull',
-                                 'http://hg.mozilla.org', '--branch',
-                                 'default'])
-            + 0,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'identify', '--branch'])
-            + ExpectShell.log('stdio',
-                stdout='default')
-            + 0,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'update',
-                                 '--clean', '--rev', 'default'])
-            # dummy output for not messing up output for next step
-            + ExpectShell.log('stdio',
-                stdout='\n')
-            + 0,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'identify',
-                                    '--id', '--debug'])
-            + ExpectShell.log('stdio',
-                stdout='f6ad368298bd941e934a41f3babc827b2aa95a1d')
-            + 0,
-        )
-        self.expectOutcome(result=SUCCESS, status_text=["update"])
-        return self.runStep()
-
-    def test_mode_fresh_no_existing_repo(self):
-        self.setupStep(
-                mercurial.Mercurial(repourl='http://hg.mozilla.org',
-                                    mode='full', method='fresh'))
-        self.expectCommands(
-            Expect('stat', dict(file='wkdir/.hg'))
-            + 1,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'clone',
-                                    'http://hg.mozilla.org', '.'])
-            + 0,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', '--config',
-                                 'extensions.purge=', 'purge', '--all'])
-            + 0,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'pull',
-                                 'http://hg.mozilla.org', '--branch',
-                                 'default'])
-            + 0,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'identify', '--branch'])
-            + ExpectShell.log('stdio',
-                stdout='default')
-            + 0,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'update',
-                                 '--clean', '--rev', 'default'])
-            # dummy output for not messing up output for next step
-            + ExpectShell.log('stdio',
-                stdout='\n')
-            + 0,
-            ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'identify',
-                                    '--id', '--debug'])
-            + ExpectShell.log('stdio',
-                stdout='f6ad368298bd941e934a41f3babc827b2aa95a1d')
-            + 0,
-        )
-        self.expectOutcome(result=SUCCESS, status_text=["update"])
-        return self.runStep()
-
     def test_mode_incremental_given_revision(self):
         self.setupStep(
                 mercurial.Mercurial(repourl='http://hg.mozilla.org',
@@ -249,10 +316,11 @@ class TestMercurial(sourcesteps.SourceStepMixin, unittest.TestCase):
                 ))
 
         self.expectCommands(
-            Expect('stat', dict(file='wkdir/.hg')),
+            Expect('stat', dict(file='wkdir/.hg'))
+            + 0,
             ExpectShell(workdir='wkdir',
-                        command=['hg', '--verbose', 'clone',
-                                 'http://hg.mozilla.org', '.', '--noupdate'])
+                        command=['hg', '--verbose', 'pull',
+                                 'http://hg.mozilla.org'])
             + 0,
             ExpectShell(workdir='wkdir',
                         command=['hg', '--verbose', 'identify', '--branch'])
@@ -280,7 +348,8 @@ class TestMercurial(sourcesteps.SourceStepMixin, unittest.TestCase):
                 branch='stable',
                 ))
         self.expectCommands(
-            Expect('stat', dict(file='wkdir/.hg')),
+            Expect('stat', dict(file='wkdir/.hg'))
+            + 0,
             ExpectShell(workdir='wkdir',
                         command=['hg', '--verbose', 'clone',
                                  'http://hg.mozilla.org', '.', '--noupdate'])
@@ -289,7 +358,8 @@ class TestMercurial(sourcesteps.SourceStepMixin, unittest.TestCase):
                         command=['hg', '--verbose', 'identify', '--branch'])
             + ExpectShell.log('stdio', stdout='default')
             + 0,
-            Expect('rmdir', dict(dir='wkdir')),
+            Expect('rmdir', dict(dir='wkdir'))
+            + 0,
             ExpectShell(workdir='wkdir',
                         command=['hg', '--verbose', 'clone', '--noupdate',
                                     'http://hg.mozilla.org', '.'])
@@ -308,3 +378,43 @@ class TestMercurial(sourcesteps.SourceStepMixin, unittest.TestCase):
             )
         self.expectOutcome(result=SUCCESS, status_text=["update"])
         return self.runStep()
+
+    def test_mode_incremental_branch_change_no_clobberOnBranchChange(self):
+        self.setupStep(
+                mercurial.Mercurial(repourl='http://hg.mozilla.org',
+                                    mode='incremental',
+                                    clobberOnBranchChange=False), dict(
+                branch='stable',
+                ))
+        self.expectCommands(
+            Expect('stat', dict(file='wkdir/.hg'))
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'clone',
+                                 'http://hg.mozilla.org', '.', '--noupdate'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'identify', '--branch'])
+            + ExpectShell.log('stdio', stdout='default')
+            + 0,
+            Expect('rmdir', dict(dir='wkdir'))
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'clone', '--noupdate',
+                                    'http://hg.mozilla.org', '.'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'update',
+                                 '--clean', '--rev', 'stable'])
+            + 0,
+            ExpectShell(workdir='wkdir',
+                        command=['hg', '--verbose', 'identify',
+                                    '--id', '--debug'])
+            + ExpectShell.log('stdio', stdout='\n')
+            + ExpectShell.log('stdio',
+                stdout='f6ad368298bd941e934a41f3babc827b2aa95a1d')
+            + 0,
+            )
+        self.expectOutcome(result=SUCCESS, status_text=["update"])
+        return self.runStep()
+
