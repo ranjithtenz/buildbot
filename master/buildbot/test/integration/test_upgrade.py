@@ -115,7 +115,8 @@ class UpgradeTestMixin(object):
 
         # older sqlites cause failures in reflection, which manifest as a
         # TypeError.  Reflection is only used for tests, so we can just skip
-        # this test on such platforms.
+        # this test on such platforms.  We still get the advantage of trying
+        # the upgrade, at any rate.
         def catch_TypeError(f):
             f.trap(TypeError)
             raise unittest.SkipTest("model comparison skipped: bugs in schema "
@@ -313,6 +314,29 @@ class UpgradeTestV083(UpgradeTestMixin, unittest.TestCase):
             (12, 12, 1310326900, 1, 0),
             (13, 13, 1310326900, 1, 0),
             (14, 14, 1310326900, 1, 0),
+        ])
+
+    def test_upgrade(self):
+        return self.do_test_upgrade()
+
+
+class UpgradeTestV084(UpgradeTestMixin, unittest.TestCase):
+
+    source_tarball = "v084.tgz"
+
+    def verify_thd(self, conn):
+        "partially verify the contents of the db - run in a thread"
+        model = self.db.model
+
+        tbl = model.buildrequests
+        r = conn.execute(tbl.select(order_by=tbl.c.id))
+        buildreqs = [ (br.id, br.buildsetid, int(br.claimed_at),
+                       br.complete, br.results)
+                      for br in r.fetchall() ]
+        self.assertEqual(buildreqs, [
+            (1, 1, 1310352793, 1, 0),
+            (2, 2, 1310352808, 1, 0),
+            (3, 3, 1310352808, 1, 0)
         ])
 
     def test_upgrade(self):
