@@ -20,7 +20,7 @@ from zope.interface import implements
 from twisted.internet import reactor, defer, error
 from twisted.protocols import basic
 from twisted.spread import pb
-from twisted.python import log
+from twisted.python import log, components
 from twisted.python.failure import Failure
 from twisted.web.util import formatFailure
 from twisted.python.reflect import accumulateClassList
@@ -701,14 +701,15 @@ class BuildStep:
         if self.progress:
             self.progress.setProgress(metric, value)
 
+    # minimal set of property methods for backward-compatibility.  Better to
+    # cast the step to IProperties and call the methods there.
+
     def getProperty(self, propname):
-        try:
-            return self.build.getProperty(propname)
-        except KeyError:
-            raise KeyError, 'build is %r' % self.build
+        return interfaces.IProperties(self).getProperty(propname)
 
     def setProperty(self, propname, value, source="Step", runtime=True):
-        self.build.setProperty(propname, value, source, runtime=runtime)
+        return interfaces.IProperties(self).setProperty(propname, value,
+                                                source, runtime=runtime)
 
     def startStep(self, remote):
         """Begin the step. This returns a Deferred that will fire when the
@@ -1303,6 +1304,9 @@ def regex_log_evaluator(cmd, step_status, regexes):
                     worst = possible_status
     return worst
 
+components.registerAdapter(
+        lambda step : interfaces.IProperties(step.build.build_status),
+        BuildStep, interfaces.IProperties)
 
 # (WithProperties used to be available in this module)
 from buildbot.process.properties import WithProperties

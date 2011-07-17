@@ -113,8 +113,8 @@ class Properties(util.ComparableMixin):
 
     # IProperties methods
 
-    def getProperty(self, name, default=None):
-        return self.properties.get(name, (default,))[0]
+    def getProperty(self, name):
+        return self.properties[name][0]
 
     def hasProperty(self, name):
         return self.properties.has_key(name)

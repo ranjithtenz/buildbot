@@ -15,7 +15,6 @@
 
 import sys
 import re
-import exceptions
 from twisted.python import log
 from twisted.internet import defer
 from twisted.enterprise import adbapi
@@ -423,9 +422,14 @@ CREATE TABLE IF NOT EXISTS test_warnings(
 ) ENGINE=innodb
 """)
 
-        revision = self.getProperty("got_revision")
-        if revision is None:
-            revision = self.getProperty("revision")
+        try:
+            revision = self.getProperty("got_revision")
+        except KeyError:
+            try:
+                revision = self.getProperty("revision")
+            except KeyError:
+                revision = None
+
         typ = "mtr"
         if self.test_type:
             typ = self.test_type
